@@ -1,0 +1,36 @@
+{
+  "name": "cloud-terminal",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "directories": {
+    "doc": "docs"
+  },
+  "scripts": {
+    "test": "npm run test --workspaces --if-present",
+    "lint": "npm run lint --workspaces --if-present",
+    "build": "npm run build --workspaces --if-present",
+    "format": "prettier --check \"**/*.{js,jsx,json,md,css}\"",
+    "format:write": "prettier --write \"**/*.{js,jsx,json,md,css}\""
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Adeolu5678/Cloud-Terminal.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/Adeolu5678/Cloud-Terminal/issues"
+  },
+  "homepage": "https://github.com/Adeolu5678/Cloud-Terminal#readme",
+  "private": "true",
+  "workspaces": [
+    "backend",
+    "frontend"
+  ],
+  "devDependencies": {
+    "prettier": "^3.8.1"
+  }
+}
