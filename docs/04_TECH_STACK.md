@@ -22,7 +22,7 @@
 - **tmux mapping model:** “Agents” correspond directly to tmux windows; avoids extra DB complexity in MVP.
 
 ## Deployment Topology
-1. Backend runs on VPS (port `[REQUIRES CLARIFICATION]`, example in brief: 3000).
+1. Backend runs on VPS (default port `3000` per brief example; should remain configurable via environment variables).
 2. Cloudflare Tunnel routes HTTPS traffic to backend.
 3. Frontend is either:
    - served statically from backend, or
@@ -39,4 +39,3 @@
 - Secret/config management strategy: `[REQUIRES CLARIFICATION]`
 - Monitoring/logging stack: `[REQUIRES CLARIFICATION]`
 - Whether frontend is co-hosted with backend or hosted separately on Pages: `[REQUIRES CLARIFICATION]`
-

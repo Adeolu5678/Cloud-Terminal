@@ -17,8 +17,8 @@ flowchart LR
     API --> PTY[node-pty]
     PTY --> TMUX[tmux session: cloud-term]
     TMUX --> W0[Window 0: Shell]
-    TMUX --> W1[Window 1: Kilo-Coder]
-    TMUX --> W2[Window 2: Kilo-Research]
+    TMUX --> W1[Window 1: Agent 1]
+    TMUX --> W2[Window 2: Agent 2]
 ```
 
 ## 2. Module Breakdown
@@ -63,7 +63,8 @@ No database is explicitly required in the provided brief.
 - Session persistence delegated to tmux process state.
 - Agent identity represented by tmux window metadata.
 
-### Database Requirement Status
+### Future Database Considerations (If Scope Expands)
+If future requirements introduce persistent entities beyond tmux runtime state, define:
 - **Relational/NoSQL selection:** `[REQUIRES CLARIFICATION]`
 - **Persistent user/account records:** `[REQUIRES CLARIFICATION]`
 - **Audit/event storage:** `[REQUIRES CLARIFICATION]`
@@ -96,4 +97,3 @@ The brief is socket-first; endpoints below include explicit placeholders where u
 ### 5.3 HTTP Endpoints
 - Backend health check endpoint: `[REQUIRES CLARIFICATION]`
 - Any REST management endpoints: `[REQUIRES CLARIFICATION]`
-

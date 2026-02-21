@@ -87,12 +87,12 @@ sequenceDiagram
     participant TM as tmux
     participant PTY as node-pty stream
 
-    FE->>BE: request/receive session:list
+    FE->>BE: session:list request
     BE->>TM: list-windows
     TM-->>BE: window metadata
-    BE-->>FE: session:list {windows}
+    BE-->>FE: session:list response {windows}
 
-    U->>FE: Click "Kilo-Coder"
+    U->>FE: Click target agent/window
     FE->>BE: session:switch {windowIndex:1}
     BE->>TM: select-window -t 1
     TM-->>PTY: active window output
@@ -104,4 +104,3 @@ sequenceDiagram
 ## Clarifications Needed
 - Exact socket event names are inferred and may differ from implementation. `[REQUIRES CLARIFICATION]`
 - Error-handling flows for failed auth, disconnected PTY, and missing tmux are not explicitly detailed. `[REQUIRES CLARIFICATION]`
-

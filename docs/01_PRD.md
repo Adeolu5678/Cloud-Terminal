@@ -58,8 +58,7 @@ Cloud Terminal is a persistent, web-based terminal intended for a single user to
 
 ## Future Scope
 - Hardened authentication/authorization model beyond hardcoded token.
-- Multi-user support and role boundaries. 
+- Multi-user support and role boundaries.
 - Agent provisioning automation beyond manual tmux window mapping.
-- Observability and audit logging. 
+- Observability and audit logging.
 - Richer session metadata and persistence model (if needed).
-
