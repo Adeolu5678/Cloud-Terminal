@@ -65,10 +65,17 @@ function registerSocketServer(io, config) {
     socket.on('session:list', emitWindows)
 
     socket.on('session:switch', async ({ windowIndex }) => {
-      if (!Number.isInteger(windowIndex) || windowIndex < 0) return
+      if (!Number.isInteger(windowIndex) || windowIndex < 0) {
+        socket.emit('terminal:error', { message: 'Invalid window index' })
+        return
+      }
 
-      await switchWindow(config.tmuxSessionName, windowIndex)
-      await emitWindows()
+      try {
+        await switchWindow(config.tmuxSessionName, windowIndex)
+        await emitWindows()
+      } catch {
+        socket.emit('terminal:error', { message: 'Unable to switch tmux window' })
+      }
     })
 
     socket.on('disconnect', () => term.kill())

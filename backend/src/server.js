@@ -9,7 +9,11 @@ const { registerSocketServer } = require('./socket')
 dotenv.config({ path: path.resolve(process.cwd(), '../.env') })
 
 const app = express()
-const allowedOrigins = process.env.CORS_ORIGIN?.split(',') || '*'
+const allowedOrigins =
+  process.env.CORS_ORIGIN
+    ?.split(',')
+    .map((origin) => origin.trim())
+    .filter((origin) => origin.length > 0) || '*'
 
 app.use(cors({ origin: allowedOrigins }))
 
