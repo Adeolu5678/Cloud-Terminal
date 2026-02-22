@@ -1,14 +1,14 @@
-const crypto = require('node:crypto')
+const crypto = require("node:crypto");
 
 function isAuthorized(token, expectedToken) {
-  if (!token || !expectedToken) return false
+  if (!token || !expectedToken) return false;
 
-  const tokenBuffer = Buffer.from(String(token))
-  const expectedBuffer = Buffer.from(String(expectedToken))
+  const tokenBuffer = Buffer.from(String(token));
+  const expectedBuffer = Buffer.from(String(expectedToken));
 
-  if (tokenBuffer.length !== expectedBuffer.length) return false
+  if (tokenBuffer.length !== expectedBuffer.length) return false;
 
-  return crypto.timingSafeEqual(tokenBuffer, expectedBuffer)
+  return crypto.timingSafeEqual(tokenBuffer, expectedBuffer);
 }
 
-module.exports = { isAuthorized }
+module.exports = { isAuthorized };

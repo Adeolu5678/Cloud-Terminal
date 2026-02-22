@@ -1,87 +1,217 @@
-const pty = require('node-pty')
-const { isAuthorized } = require('./auth')
-const { ensureSession, listWindows, switchWindow } = require('./tmux')
+const { isAuthorized } = require("./auth");
+const terminalManager = require("./terminalManager");
+const storage = require("./storage");
+const fsService = require("./fsService");
 
 function registerSocketServer(io, config) {
+  // Global terminal events
+  terminalManager.on('output', (id, data) => {
+    io.emit(`terminal:output:${id}`, { data });
+  });
+
+  terminalManager.on('exit', (id) => {
+    io.emit(`terminal:exit:${id}`);
+    storage.getProjects().then(projects => {
+      storage.getServers().then(servers => {
+        io.emit("config:sync", { projects, servers, terminals: terminalManager.getAllTerminals() });
+      });
+    }).catch(console.error);
+  });
+
   io.use((socket, next) => {
-    const token = socket.handshake.auth?.token || socket.handshake.query?.token
+    const token = socket.handshake.auth?.token || socket.handshake.query?.token;
 
     if (!isAuthorized(token, config.authToken)) {
-      return next(new Error('Unauthorized'))
+      return next(new Error("Unauthorized"));
     }
 
-    return next()
-  })
+    return next();
+  });
 
-  io.on('connection', async (socket) => {
-    const cols = Number(socket.handshake.auth?.cols) || 120
-    const rows = Number(socket.handshake.auth?.rows) || 30
-    let term
-
-    try {
-      await ensureSession(config.tmuxSessionName)
-      term = pty.spawn('tmux', ['attach', '-t', config.tmuxSessionName], {
-        name: 'xterm-color',
-        cols,
-        rows,
-        cwd: process.env.HOME,
-        env: process.env,
-      })
-    } catch {
-      term = pty.spawn(process.env.SHELL || 'bash', [], {
-        name: 'xterm-color',
-        cols,
-        rows,
-        cwd: process.env.HOME,
-        env: process.env,
-      })
-      term.write('echo "tmux unavailable, started shell fallback."\r')
-    }
-
-    const emitWindows = async () => {
+  io.on("connection", async (socket) => {
+    // Send initial config state
+    const emitConfig = async () => {
       try {
-        const windows = await listWindows(config.tmuxSessionName)
-        socket.emit('session:list', { windows })
-      } catch {
-        socket.emit('session:list', { windows: [] })
+        const projects = await storage.getProjects();
+        const servers = await storage.getServers();
+        const terminals = terminalManager.getAllTerminals();
+        socket.emit("config:sync", { projects, servers, terminals });
+      } catch (err) {
+        console.error("Failed to emit config:", err);
       }
-    }
+    };
 
-    term.onData((data) => socket.emit('terminal:output', { data }))
-    term.onExit(() => socket.disconnect(true))
+    await emitConfig();
 
-    socket.on('terminal:input', ({ data }) => {
-      if (typeof data === 'string') {
-        term.write(data)
-      }
-    })
-
-    socket.on('terminal:resize', ({ cols: nextCols, rows: nextRows }) => {
-      if (Number.isInteger(nextCols) && Number.isInteger(nextRows)) {
-        term.resize(nextCols, nextRows)
-      }
-    })
-
-    socket.on('session:list', emitWindows)
-
-    socket.on('session:switch', async ({ windowIndex }) => {
-      if (!Number.isInteger(windowIndex) || windowIndex < 0) {
-        socket.emit('terminal:error', { message: 'Invalid window index' })
-        return
-      }
-
+    // Configuration Management
+    socket.on("config:addProject", async (data, callback) => {
       try {
-        await switchWindow(config.tmuxSessionName, windowIndex)
-        await emitWindows()
-      } catch {
-        socket.emit('terminal:error', { message: 'Unable to switch tmux window' })
+        const project = await storage.addProject(data);
+        await emitConfig();
+        if (callback) callback({ success: true, project });
+      } catch (err) {
+        if (callback) callback({ success: false, error: err.message });
       }
-    })
+    });
 
-    socket.on('disconnect', () => term.kill())
+    socket.on("config:addServer", async (data, callback) => {
+      try {
+        const server = await storage.addServer(data);
+        await emitConfig();
+        if (callback) callback({ success: true, server });
+      } catch (err) {
+        if (callback) callback({ success: false, error: err.message });
+      }
+    });
 
-    await emitWindows()
-  })
+    socket.on("config:editProject", async (data, callback) => {
+      try {
+        const { id, ...updates } = data;
+        const project = await storage.editProject(id, updates);
+        await emitConfig();
+        if (callback) callback({ success: true, project });
+      } catch (err) {
+        if (callback) callback({ success: false, error: err.message });
+      }
+    });
+
+    socket.on("config:editServer", async (data, callback) => {
+      try {
+        const { id, ...updates } = data;
+        const server = await storage.editServer(id, updates);
+        await emitConfig();
+        if (callback) callback({ success: true, server });
+      } catch (err) {
+        if (callback) callback({ success: false, error: err.message });
+      }
+    });
+
+    socket.on("config:removeProject", async ({ id }, callback) => {
+      try {
+        await storage.removeProject(id);
+        await emitConfig();
+        if (callback) callback({ success: true });
+      } catch (err) {
+        if (callback) callback({ success: false, error: err.message });
+      }
+    });
+
+    socket.on("config:removeServer", async ({ id }, callback) => {
+      try {
+        await storage.removeServer(id);
+        await emitConfig();
+        if (callback) callback({ success: true });
+      } catch (err) {
+        if (callback) callback({ success: false, error: err.message });
+      }
+    });
+
+    // Terminal Management
+    socket.on("terminal:create", async (options, callback) => {
+      try {
+        const terminal = await terminalManager.createTerminal(options);
+        await emitConfig();
+        if (callback) callback({ success: true, terminalId: terminal.id });
+      } catch (err) {
+        console.error("Failed to create terminal:", err);
+        if (callback) callback({ success: false, error: err.message });
+      }
+    });
+
+    socket.on("terminal:requestHistory", ({ terminalId }) => {
+      if (terminalId) {
+        const history = terminalManager.getHistory(terminalId);
+        if (history) {
+          socket.emit(`terminal:output:${terminalId}`, { data: history });
+        }
+      }
+    });
+
+    socket.on("terminal:input", ({ terminalId, data }) => {
+      if (typeof data === "string" && terminalId) {
+        terminalManager.writeTerminal(terminalId, data);
+      }
+    });
+
+    socket.on("terminal:resize", ({ terminalId, cols, rows }) => {
+      if (terminalId && Number.isInteger(cols) && Number.isInteger(rows)) {
+        terminalManager.resizeTerminal(terminalId, cols, rows);
+      }
+    });
+
+    socket.on("terminal:kill", ({ terminalId }) => {
+      terminalManager.killTerminal(terminalId);
+      emitConfig();
+    });
+
+    socket.on("terminal:rename", ({ terminalId, name }) => {
+      if (terminalId && name) {
+        terminalManager.renameTerminal(terminalId, name);
+        emitConfig();
+      }
+    });
+
+    // File System Management
+    socket.on("fs:list", async ({ serverId, dirPath }, callback) => {
+      try {
+        const result = await fsService.listDir(serverId, dirPath);
+        if (callback) callback({ success: true, ...result });
+      } catch (err) {
+        if (callback) callback({ success: false, error: err.message });
+      }
+    });
+
+    socket.on("fs:read", async ({ serverId, filePath }, callback) => {
+      try {
+        const result = await fsService.readFile(serverId, filePath);
+        if (callback) callback({ success: true, ...result });
+      } catch (err) {
+        if (callback) callback({ success: false, error: err.message });
+      }
+    });
+
+    socket.on("fs:write", async ({ serverId, filePath, content }, callback) => {
+      try {
+        const result = await fsService.writeFile(serverId, filePath, content);
+        if (callback) callback({ success: true, ...result });
+      } catch (err) {
+        if (callback) callback({ success: false, error: err.message });
+      }
+    });
+
+    socket.on("fs:delete", async ({ serverId, filePath }, callback) => {
+      try {
+        const result = await fsService.deleteFile(serverId, filePath);
+        if (callback) callback({ success: true, ...result });
+      } catch (err) {
+        if (callback) callback({ success: false, error: err.message });
+      }
+    });
+
+    socket.on("fs:rename", async ({ serverId, oldPath, newPath }, callback) => {
+      try {
+        const result = await fsService.renameItem(serverId, oldPath, newPath);
+        if (callback) callback({ success: true, ...result });
+      } catch (err) {
+        if (callback) callback({ success: false, error: err.message });
+      }
+    });
+
+    socket.on("fs:mkdir", async ({ serverId, dirPath }, callback) => {
+      try {
+        const result = await fsService.mkDir(serverId, dirPath);
+        if (callback) callback({ success: true, ...result });
+      } catch (err) {
+        if (callback) callback({ success: false, error: err.message });
+      }
+    });
+
+    // We don't automatically kill terminals on socket disconnect anymore, 
+    // to allow them to persist as background tasks!
+    socket.on("disconnect", () => {
+      // no-op, terminals survive disconnects!
+    });
+  });
 }
 
-module.exports = { registerSocketServer }
+module.exports = { registerSocketServer };

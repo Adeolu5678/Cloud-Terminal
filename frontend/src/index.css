@@ -1,4 +1,58 @@
-:root {
-  color: #e2e8f0;
-  background: #020617;
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  body,
+  html,
+  #root {
+    @apply m-0 min-h-screen font-sans bg-slate-950 text-slate-200 overflow-hidden;
+  }
+}
+
+@layer utilities {
+  .bg-mesh {
+    background-color: #020617;
+    background-image: 
+      radial-gradient(at 0% 0%, hsla(253,16%,7%,1) 0, transparent 50%), 
+      radial-gradient(at 50% 0%, hsla(225,39%,30%,0.2) 0, transparent 50%), 
+      radial-gradient(at 100% 0%, hsla(339,49%,30%,0.2) 0, transparent 50%);
+  }
+  
+  .glass-panel-premium {
+    @apply bg-slate-900/40 backdrop-blur-xl border border-white/10 shadow-[0_8px_32px_0_rgba(0,0,0,0.36)];
+  }
+
+
+  /* Custom Scrollbar for Terminal / General */
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    @apply bg-dark-600 rounded-full;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    @apply bg-primary-500;
+  }
+}
+
+@layer components {
+  .glass-panel {
+    @apply bg-slate-900/40 backdrop-blur-xl border border-white/10 shadow-[0_8px_32px_0_rgba(0,0,0,0.4)];
+  }
+
+  /* Cyber button styles */
+  .cyber-btn {
+    @apply bg-slate-800/80 text-slate-200 border border-white/10 rounded-lg px-5 py-2.5 text-sm font-semibold tracking-wide transition-all duration-300;
+  }
+  .cyber-btn:hover {
+    @apply border-primary-400 text-primary-300 bg-primary-500/20 shadow-[0_0_20px_rgba(56,189,248,0.4)] -translate-y-0.5;
+  }
+  .cyber-btn:active {
+    @apply scale-95 translate-y-0 shadow-[0_0_10px_rgba(56,189,248,0.2)];
+  }
 }

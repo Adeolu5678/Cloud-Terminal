@@ -3,7 +3,9 @@
 This document defines interaction flows for the three core user journeys implied by the project brief.
 
 ## Journey 1: Connect and Start Persistent Terminal Session
+
 ### Steps
+
 1. User opens PWA on mobile.
 2. Frontend prompts for lock/token (if not already unlocked).
 3. Frontend establishes Socket.io connection through Cloudflare Tunnel.
@@ -14,6 +16,7 @@ This document defines interaction flows for the three core user journeys implied
 8. User input is relayed back to PTY in real time.
 
 ### Sequence Diagram
+
 ```mermaid
 sequenceDiagram
     participant U as User
@@ -43,7 +46,9 @@ sequenceDiagram
 ```
 
 ## Journey 2: Use Mobile Virtual Keyboard Controls
+
 ### Steps
+
 1. User taps a virtual control key (e.g., ESC/CTRL/Arrow).
 2. Frontend maps button to control sequence bytes.
 3. Frontend sends encoded data to backend via socket.
@@ -52,6 +57,7 @@ sequenceDiagram
 6. Updated terminal output is streamed back.
 
 ### Sequence Diagram
+
 ```mermaid
 sequenceDiagram
     participant U as User
@@ -71,7 +77,9 @@ sequenceDiagram
 ```
 
 ## Journey 3: Switch Between Agent Windows (tmux)
+
 ### Steps
+
 1. Frontend requests or receives current tmux windows.
 2. User clicks agent/window item in sidebar.
 3. Frontend emits session-switch intent with target index.
@@ -79,6 +87,7 @@ sequenceDiagram
 5. Active stream now reflects selected window context.
 
 ### Sequence Diagram
+
 ```mermaid
 sequenceDiagram
     participant U as User
@@ -102,5 +111,6 @@ sequenceDiagram
 ```
 
 ## Clarifications Needed
+
 - Exact socket event names are inferred and may differ from implementation. `[REQUIRES CLARIFICATION]`
 - Error-handling flows for failed auth, disconnected PTY, and missing tmux are not explicitly detailed. `[REQUIRES CLARIFICATION]`
