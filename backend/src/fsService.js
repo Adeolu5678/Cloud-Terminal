@@ -150,6 +150,7 @@ class FsService {
           if (isDir) {
             // SFTP rmdir only works on empty dirs. Use exec for recursive delete.
             conn.exec(`rm -rf "${filePath}"`, (err, stream) => {
+              if (err) { conn.end(); return reject(err); }
               stream.on('close', () => { conn.end(); resolve({ path: filePath, success: true }); });
             });
           } else {
@@ -189,6 +190,7 @@ class FsService {
       return new Promise((resolve, reject) => {
         // SFTP mkdir doesn't do recursive. Use exec
         conn.exec(`mkdir -p "${dirPath}"`, (err, stream) => {
+          if (err) { conn.end(); return reject(err); }
           stream.on('close', () => { conn.end(); resolve({ path: dirPath, success: true }); });
         });
       });

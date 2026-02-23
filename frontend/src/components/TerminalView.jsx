@@ -4,14 +4,13 @@ import { FitAddon } from "@xterm/addon-fit";
 import "xterm/css/xterm.css";
 
 function TerminalView({ socket, terminalId }) {
-  const terminalRef = useRef(null);
+  const containerRef = useRef(null);
   const termInstance = useRef(null);
   const fitAddonRef = useRef(null);
 
   useEffect(() => {
-    if (!terminalId || !socket) return;
-    
-    // Custom tailwind-matching theme
+    if (!terminalId || !socket || !containerRef.current) return;
+
     const theme = {
       background: "transparent",
       foreground: "#f1f5f9",
@@ -51,10 +50,11 @@ function TerminalView({ socket, terminalId }) {
 
     const fitAddon = new FitAddon();
     fitAddonRef.current = fitAddon;
-
     terminal.loadAddon(fitAddon);
-    terminal.open(terminalRef.current);
 
+    // Open immediately — the container already has real dimensions because
+    // Workspace.jsx wraps it in `absolute inset-0` inside a positioned parent.
+    terminal.open(containerRef.current);
     termInstance.current = terminal;
 
     const onDataDisposable = terminal.onData((data) => {
@@ -67,41 +67,66 @@ function TerminalView({ socket, terminalId }) {
 
     const eventName = `terminal:output:${terminalId}`;
     socket.on(eventName, handleOutput);
-    
-    // Request historical data
-    socket.emit("terminal:requestHistory", { terminalId });
 
-    // Use ResizeObserver for robust containment resizing
-    const resizeObserver = new ResizeObserver((entries) => {
-      for (let entry of entries) {
-        const { width, height } = entry.contentRect;
-        
-        // Only fit and focus if the tab is actively visible (dimensions > 0)
-        if (width > 0 && height > 0) {
-          try {
-            fitAddon.fit();
-            socket.emit("terminal:resize", {
-              terminalId,
-              cols: terminal.cols,
-              rows: terminal.rows,
-            });
-            
-            // Force a microtask delay to ensure canvas is fully painted before capturing focus
-            setTimeout(() => {
-               terminal.focus();
-            }, 0);
-          } catch {
-            // ignore fit errors during fast resizes
-          }
+    // Use a single rAF so the browser commits the layout before fit() measures.
+    // This is the fix for the blank canvas: layout is guaranteed to be non-zero
+    // by the time fit() runs, because the container is absolute-positioned.
+    let rafId = requestAnimationFrame(() => {
+      try {
+        fitAddon.fit();
+        if (terminal.cols > 0 && terminal.rows > 0) {
+          socket.emit("terminal:resize", { terminalId, cols: terminal.cols, rows: terminal.rows });
         }
+        // Request history only after the terminal is fitted and rendered
+        socket.emit("terminal:requestHistory", { terminalId });
+        terminal.focus();
+      } catch {
+        // ignore
       }
     });
 
-    if (terminalRef.current) {
-      resizeObserver.observe(terminalRef.current);
-    }
+    // ResizeObserver only for subsequent window/layout resizes — NOT the initial open.
+    let resizeTimeout;
+    let lastW = 0;
+    let lastH = 0;
+    let initialized = false;
+
+    const resizeObserver = new ResizeObserver((entries) => {
+      // Skip the very first observation (fired immediately on observe())
+      // to avoid double-fitting right after open().
+      if (!initialized) {
+        initialized = true;
+        const { width, height } = entries[0].contentRect;
+        lastW = width;
+        lastH = height;
+        return;
+      }
+
+      clearTimeout(resizeTimeout);
+      const { width, height } = entries[0].contentRect;
+
+      // Sub-pixel guard: prevent infinite loops from xterm's own DOM mutations
+      if (Math.abs(lastW - width) < 1 && Math.abs(lastH - height) < 1) return;
+      lastW = width;
+      lastH = height;
+
+      resizeTimeout = setTimeout(() => {
+        try {
+          fitAddon.fit();
+          if (terminal.cols > 0 && terminal.rows > 0) {
+            socket.emit("terminal:resize", { terminalId, cols: terminal.cols, rows: terminal.rows });
+          }
+        } catch {
+          // ignore
+        }
+      }, 100);
+    });
+
+    resizeObserver.observe(containerRef.current);
 
     return () => {
+      cancelAnimationFrame(rafId);
+      clearTimeout(resizeTimeout);
       onDataDisposable.dispose();
       socket.off(eventName, handleOutput);
       resizeObserver.disconnect();
@@ -111,18 +136,14 @@ function TerminalView({ socket, terminalId }) {
   }, [socket, terminalId]);
 
   const handleContainerClick = () => {
-    if (termInstance.current) {
-      termInstance.current.focus();
-    }
+    termInstance.current?.focus();
   };
 
-  // Custom styling to hide xterm scrollbar since we have a container scrollbar if needed,
-  // but xterm handles its own scrolling.
   return (
     <div
-      ref={terminalRef}
+      ref={containerRef}
       onClick={handleContainerClick}
-      className="w-full h-full terminal-container [&_.xterm-viewport]:!bg-transparent [&_.xterm-viewport]:!overflow-y-auto [&_.xterm-viewport::-webkit-scrollbar]:w-1.5 [&_.xterm-viewport::-webkit-scrollbar-track]:bg-transparent [&_.xterm-viewport::-webkit-scrollbar-thumb]:bg-dark-600 [&_.xterm-viewport::-webkit-scrollbar-thumb:hover]:bg-primary-500 [&_.xterm-viewport::-webkit-scrollbar-thumb]:rounded-full"
+      className="absolute inset-0 terminal-container [&_.xterm-viewport]:!bg-transparent [&_.xterm-viewport]:!overflow-y-auto [&_.xterm-viewport::-webkit-scrollbar]:w-1.5 [&_.xterm-viewport::-webkit-scrollbar-track]:bg-transparent [&_.xterm-viewport::-webkit-scrollbar-thumb]:bg-dark-600 [&_.xterm-viewport::-webkit-scrollbar-thumb:hover]:bg-primary-500 [&_.xterm-viewport::-webkit-scrollbar-thumb]:rounded-full"
     />
   );
 }

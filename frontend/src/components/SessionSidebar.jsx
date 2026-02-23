@@ -1,8 +1,7 @@
-import { useState, useEffect } from "react";
-import { motion as Motion, AnimatePresence } from "framer-motion";
-import { Menu, X, LayoutGrid, TerminalSquare, Folder, LayoutTemplate, Activity, Users, FileText, Settings, Plus, UserCircle, LogOut, MoreVertical, Edit2, Trash2, ChevronRight, ChevronDown } from "lucide-react";
-import clsx from "clsx";
+import { useState, useEffect, useRef, useCallback } from "react";
+import { LayoutGrid, TerminalSquare, Folder, LayoutTemplate, Activity, Users, FileText, Settings, Plus, UserCircle, LogOut, MoreVertical, Edit2, Trash2, ChevronRight, ChevronDown } from "lucide-react";
 import { useAppContext } from "../context/AppContext";
+import { isMobileDevice } from "../utils/device";
 
 const MAIN_LINKS = [
   { id: "overview", label: "Overview", icon: LayoutGrid },
@@ -20,84 +19,67 @@ const BOTTOM_LINKS = [
 
 function SessionSidebar({ projects, servers, terminals, onSwitch, currentView, setCurrentView }) {
   const { killTerminal, socket } = useAppContext();
-  const [isOpen, setIsOpen] = useState(false);
+  // sidebar is always static — no mobile toggle needed
   const [dropdownSessionId, setDropdownSessionId] = useState(null);
   const [editingSessionId, setEditingSessionId] = useState(null);
   const [editingSessionName, setEditingSessionName] = useState("");
   const [collapsedGroups, setCollapsedGroups] = useState({});
+  const [dropdownPos, setDropdownPos] = useState({ top: 0, left: 0 });
 
+  // Bug 2 fix: Use a data-attribute to identify dropdown triggers instead of
+  // a single ref (which can only point to one element across a .map()).
+  // Any mousedown on an element WITHOUT [data-session-dropdown] closes the menu.
   useEffect(() => {
-    const closeDropdown = () => setDropdownSessionId(null);
-    window.addEventListener("click", closeDropdown);
-    return () => window.removeEventListener("click", closeDropdown);
+    const handleOutsideClick = (e) => {
+      setTimeout(() => {
+        if (!e.target.closest('[data-session-dropdown]')) {
+          setDropdownSessionId(null);
+        }
+      }, 0);
+    };
+    window.addEventListener('click', handleOutsideClick);
+    return () => window.removeEventListener('click', handleOutsideClick);
   }, []);
 
-  const saveEditedSession = () => {
-    if (editingSessionId && socket) {
-      socket.emit("terminal:rename", { terminalId: editingSessionId, name: editingSessionName });
+  // useRef holds the latest typed value so closures in onBlur/onKeyDown
+  // always see the freshest name regardless of when React batches re-renders.
+  const editingNameRef = useRef("");
+  // hasSaved prevents the Enter→blur double-fire:
+  // pressing Enter calls saveEditedSession() which unmounts the input;
+  // React fires onBlur on the unmounting input — this flag stops a second emit.
+  const hasSavedRef = useRef(false);
+
+  const saveEditedSession = useCallback(() => {
+    if (hasSavedRef.current) return;   // already saved — ignore the blur double-fire
+    hasSavedRef.current = true;
+    const name = editingNameRef.current.trim();
+    if (editingSessionId && socket && name) {
+      socket.emit("terminal:rename", { terminalId: editingSessionId, name });
     }
     setEditingSessionId(null);
-  };
-  
-  const handleTabKeyDown = (e) => {
-    if (e.key === 'Enter') saveEditedSession();
-    if (e.key === 'Escape') setEditingSessionId(null);
-  };
+  }, [editingSessionId, socket]);
 
-  const toggleSidebar = () => setIsOpen(!isOpen);
-
+  const handleTabKeyDown = useCallback((e) => {
+    if (e.key === 'Enter') { e.preventDefault(); saveEditedSession(); }
+    if (e.key === 'Escape') { hasSavedRef.current = true; setEditingSessionId(null); }
+  }, [saveEditedSession]);
   const handleNav = (id) => {
     setCurrentView(id);
-    if (window.innerWidth < 1024) setIsOpen(false);
   };
 
   return (
     <>
-      {/* Mobile Toggle Button (Floating) */}
-      <button
-        type="button"
-        onClick={toggleSidebar}
-        className="fixed top-3 left-3 z-50 p-2 bg-slate-900/40 backdrop-blur-xl border border-white/10 rounded-lg text-slate-200 hover:text-primary-400 hover:bg-slate-800/60 transition-all shadow-lg lg:hidden"
+      {/* Sidebar — always static, fixed width, never slides */}
+      <aside
+        className="hidden lg:flex w-64 flex-shrink-0 h-full glass-panel-premium flex-col border-l-0 border-y-0 overflow-hidden"
       >
-        <Menu size={24} />
-      </button>
-
-      {/* Backdrop for mobile */}
-      <AnimatePresence>
-        {isOpen && (
-          <Motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            onClick={toggleSidebar}
-            className="fixed inset-0 bg-slate-950/60 backdrop-blur-sm z-40 lg:hidden"
-          />
-        )}
-      </AnimatePresence>
-
-      {/* Sidebar Panel */}
-      <Motion.aside
-        initial={{ x: "-100%" }}
-        animate={{ x: isOpen ? 0 : 0 }} 
-        className={clsx(
-          "fixed top-0 left-0 h-full w-72 glass-panel-premium z-50 flex flex-col transition-transform duration-300 ease-in-out lg:static lg:transform-none lg:w-64 border-l-0 border-y-0 hidden lg:flex",
-          isOpen ? "!translate-x-0 !flex" : "-translate-x-full"
-        )}
-      >
-        <div className="flex items-center justify-between p-5 pb-4 border-b border-white/5">
-          <div className="flex items-center gap-3">
-            <div className="w-8 h-8 rounded-lg bg-primary-500/20 border border-primary-500/50 flex items-center justify-center text-primary-400 shadow-[0_0_15px_rgba(56,189,248,0.2)]">
+        <div className="flex items-center p-5 pb-4 border-b border-white/5">
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="w-8 h-8 rounded-lg bg-primary-500/20 border border-primary-500/50 flex items-center justify-center text-primary-400 shadow-[0_0_15px_rgba(56,189,248,0.2)] flex-shrink-0">
                <TerminalSquare size={16} />
             </div>
-            <span className="font-mono font-bold tracking-wide text-slate-100">Cloud Terminal</span>
+            <span className="font-mono font-bold tracking-wide text-slate-100 truncate">Cloud Terminal</span>
           </div>
-          <button
-            type="button"
-            onClick={toggleSidebar}
-            className="p-1.5 text-slate-400 hover:text-red-400 rounded-md hover:bg-dark-700 transition-colors lg:hidden"
-          >
-            <X size={18} />
-          </button>
         </div>
 
         <div className="px-4 py-4 border-b border-white/5">
@@ -122,12 +104,11 @@ function SessionSidebar({ projects, servers, terminals, onSwitch, currentView, s
                   <button
                     type="button"
                     onClick={() => handleNav(link.id)}
-                    className={clsx(
-                      "w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-left text-sm font-mono transition-all",
+                    className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-left text-sm font-mono transition-all ${
                       isActive
                         ? "bg-primary-500/10 text-primary-300 shadow-[inset_0_0_10px_rgba(56,189,248,0.1)]"
                         : "text-slate-400 hover:bg-slate-800/40 hover:text-slate-200"
-                    )}
+                    }`}
                   >
                     <div className="flex items-center gap-3">
                       <Icon size={18} className={isActive ? "text-primary-400" : "text-slate-500"} />
@@ -148,7 +129,7 @@ function SessionSidebar({ projects, servers, terminals, onSwitch, currentView, s
             // Group terminals by project or server
             const groupedTerminals = {};
             terminals.forEach(t => {
-              let groupName = "Global / Local";
+              let groupName = isMobileDevice() ? "My PC (Host Server)" : "Host PC (Local)";
               if (t.type === 'project') {
                 const proj = projects?.find(p => p.id === t.refId);
                 groupName = proj ? proj.name : "Unknown Project";
@@ -180,48 +161,49 @@ function SessionSidebar({ projects, servers, terminals, onSwitch, currentView, s
                         {!isCollapsed && (
                           <ul className="space-y-1">
                             {groupTerms.map((t) => (
-                              <li key={t.id} className="relative flex items-center group/item hover:bg-slate-800/60 rounded-xl transition-all border border-transparent hover:border-white/5">
-                                <button
+                              <li key={t.id} className="relative flex items-center group hover:bg-slate-800/60 rounded-xl transition-all border border-transparent hover:border-white/5">
+                              <button
                                   type="button"
                                   onClick={() => onSwitch(t.id)}
-                                  className="flex-1 flex items-center justify-between px-3 py-2 text-left text-sm font-mono text-slate-300"
+                                  className="flex-1 flex items-center justify-between px-3 py-2 text-left text-sm font-mono text-slate-300 min-w-0 overflow-hidden"
                                 >
-                                  <div className="flex items-center gap-3 truncate">
-                                    <div className="w-1.5 h-1.5 rounded-full bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.6)]" />
+                                  <div className="flex items-center gap-3 min-w-0 overflow-hidden">
+                                    <div className="w-1.5 h-1.5 rounded-full bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.6)] flex-shrink-0" />
                                     
                                     {editingSessionId === t.id ? (
                                       <input 
+                                        data-session-dropdown
                                         autoFocus
-                                        value={editingSessionName}
-                                        onChange={e => setEditingSessionName(e.target.value)}
+                                        defaultValue={editingSessionName}
+                                        onChange={e => { editingNameRef.current = e.target.value; setEditingSessionName(e.target.value); }}
                                         onBlur={saveEditedSession}
                                         onKeyDown={handleTabKeyDown}
                                         onClick={e => e.stopPropagation()}
-                                        className="flex-1 bg-transparent border-none text-xs font-mono text-white focus:outline-none w-full min-w-0"
+                                        className="flex-1 bg-slate-800 border border-primary-500/50 rounded px-1 text-xs font-mono text-white focus:outline-none w-full min-w-0"
                                       />
                                     ) : (
-                                      <span className="truncate">{t.name}</span>
+                                      <span className="truncate block max-w-[120px]" title={t.name}>{t.name}</span>
                                     )}
                                   </div>
                                 </button>
                                 
-                                <div className="relative flex items-center px-2">
+                                <div data-session-dropdown className="relative flex items-center pr-2">
                                   <button 
-                                    onClick={(e) => { e.stopPropagation(); setDropdownSessionId(dropdownSessionId === t.id ? null : t.id); }}
-                                    className={`p-0.5 rounded hover:bg-white/10 ${dropdownSessionId === t.id ? 'opacity-100' : 'opacity-0 group-hover/item:opacity-100'}`}
+                                    data-session-dropdown
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      if (dropdownSessionId === t.id) {
+                                        setDropdownSessionId(null);
+                                      } else {
+                                        const rect = e.currentTarget.getBoundingClientRect();
+                                        setDropdownPos({ top: rect.bottom + 4, left: rect.left });
+                                        setDropdownSessionId(t.id);
+                                      }
+                                    }}
+                                    className={`p-1 rounded transition-colors ${dropdownSessionId === t.id ? 'bg-white/10 text-white' : 'text-slate-500 hover:bg-white/10 hover:text-white'}`}
                                   >
-                                    <MoreVertical size={14} className="text-slate-400 hover:text-white" />
+                                    <MoreVertical size={14} />
                                   </button>
-                                  {dropdownSessionId === t.id && (
-                                    <div className="absolute left-full top-0 ml-1 w-32 bg-[#252526] border border-[#333333] rounded-md shadow-xl py-1 z-50">
-                                      <button onClick={(e) => { e.stopPropagation(); setEditingSessionId(t.id); setEditingSessionName(t.name || 'Terminal'); setDropdownSessionId(null); }} className="w-full text-left px-3 py-1.5 text-xs font-mono text-slate-300 hover:bg-[#007acc] hover:text-white flex items-center gap-2">
-                                        <Edit2 size={12}/> Rename
-                                      </button>
-                                      <button onClick={(e) => { e.stopPropagation(); killTerminal(t.id); setDropdownSessionId(null); }} className="w-full text-left px-3 py-1.5 text-xs font-mono text-slate-300 hover:bg-red-500 hover:text-white flex items-center gap-2">
-                                        <Trash2 size={12}/> Delete
-                                      </button>
-                                    </div>
-                                  )}
                                 </div>
                               </li>
                             ))}
@@ -265,7 +247,47 @@ function SessionSidebar({ projects, servers, terminals, onSwitch, currentView, s
             <LogOut size={16} className="text-slate-600 group-hover:text-red-400 transition-colors" />
           </div>
         </div>
-      </Motion.aside>
+      </aside>
+      {/* Fixed-position dropdown: escapes overflow-y-auto clipping on the sidebar */}
+      {dropdownSessionId && (
+        <div
+          data-session-dropdown
+          style={{ position: 'fixed', top: dropdownPos.top, left: dropdownPos.left, zIndex: 9999 }}
+          className="w-44 bg-[#252526] border border-[#444] rounded-lg shadow-2xl py-1 overflow-hidden"
+        >
+          {(() => {
+            const t = terminals.find(x => x.id === dropdownSessionId);
+            if (!t) return null;
+            return (
+              <>
+                <div className="px-3 py-2 border-b border-[#333] text-[10px] font-mono text-slate-500 uppercase tracking-widest truncate">{t.name || 'Terminal'}</div>
+                <button
+                  data-session-dropdown
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    const initialName = t.name || 'Terminal';
+                    hasSavedRef.current = false;        // reset for new rename session
+                    editingNameRef.current = initialName;   // prime ref with initial value
+                    setEditingSessionName(initialName);
+                    setEditingSessionId(t.id);
+                    setDropdownSessionId(null);
+                  }}
+                  className="w-full text-left px-3 py-2 text-xs font-mono text-slate-300 hover:bg-[#007acc] hover:text-white flex items-center gap-2 transition-colors"
+                >
+                  <Edit2 size={12}/> Rename
+                </button>
+                <button
+                  data-session-dropdown
+                  onClick={(e) => { e.stopPropagation(); killTerminal(t.id); setDropdownSessionId(null); }}
+                  className="w-full text-left px-3 py-2 text-xs font-mono text-slate-300 hover:bg-red-500 hover:text-white flex items-center gap-2 transition-colors"
+                >
+                  <Trash2 size={12}/> Delete
+                </button>
+              </>
+            );
+          })()}
+        </div>
+      )}
     </>
   );
 }

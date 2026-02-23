@@ -7,6 +7,8 @@ export function AppProvider({ socket, children }) {
   const [projects, setProjects] = useState([]);
   const [servers, setServers] = useState([]);
   const [terminals, setTerminals] = useState([]);
+  const [users, setUsers] = useState([]);
+  const [activityLogs, setActivityLogs] = useState([]);
   
   // Track if we've received the first sync
   const [isSynced, setIsSynced] = useState(false);
@@ -18,6 +20,8 @@ export function AppProvider({ socket, children }) {
       setProjects(data.projects || []);
       setServers(data.servers || []);
       setTerminals(data.terminals || []);
+      setUsers(data.users || []);
+      setActivityLogs(data.activity || []);
       setIsSynced(true);
     };
 
@@ -62,6 +66,26 @@ export function AppProvider({ socket, children }) {
     return new Promise((resolve, reject) => {
       if (!socket) return reject(new Error("Socket not connected"));
       socket.emit('config:removeServer', { id }, (response) => {
+        if (response.success) resolve();
+        else reject(new Error(response.error));
+      });
+    });
+  }, [socket]);
+
+  const addUser = useCallback((tokenData) => {
+    return new Promise((resolve, reject) => {
+      if (!socket) return reject(new Error("Socket not connected"));
+      socket.emit('config:addUser', tokenData, (response) => {
+        if (response.success) resolve(response.user);
+        else reject(new Error(response.error));
+      });
+    });
+  }, [socket]);
+
+  const removeUser = useCallback((id) => {
+    return new Promise((resolve, reject) => {
+      if (!socket) return reject(new Error("Socket not connected"));
+      socket.emit('config:removeUser', { id }, (response) => {
         if (response.success) resolve();
         else reject(new Error(response.error));
       });
@@ -166,15 +190,20 @@ export function AppProvider({ socket, children }) {
 
   const value = {
     isSynced,
+    socket,
     projects,
     servers,
     terminals,
+    users,
+    activityLogs,
     addProject,
     addServer,
+    addUser,
     editProject,
     editServer,
     removeProject,
     removeServer,
+    removeUser,
     createTerminal,
     killTerminal,
     fsList,

@@ -18,10 +18,11 @@ function registerSocketServer(io, config) {
     }).catch(console.error);
   });
 
-  io.use((socket, next) => {
+  io.use(async (socket, next) => {
     const token = socket.handshake.auth?.token || socket.handshake.query?.token;
 
-    if (!isAuthorized(token, config.authToken)) {
+    const authorized = await isAuthorized(token, config.authToken);
+    if (!authorized) {
       return next(new Error("Unauthorized"));
     }
 
@@ -31,14 +32,7 @@ function registerSocketServer(io, config) {
   io.on("connection", async (socket) => {
     // Send initial config state
     const emitConfig = async () => {
-      try {
-        const projects = await storage.getProjects();
-        const servers = await storage.getServers();
-        const terminals = terminalManager.getAllTerminals();
-        socket.emit("config:sync", { projects, servers, terminals });
-      } catch (err) {
-        console.error("Failed to emit config:", err);
-      }
+      await storage.emitConfig(io, terminalManager);
     };
 
     await emitConfig();
@@ -106,10 +100,33 @@ function registerSocketServer(io, config) {
       }
     });
 
+    socket.on("config:addUser", async (data, callback) => {
+      try {
+        const user = await storage.addUser(data.token, data.role);
+        await storage.logActivity("auth", `New access token generated for role: ${data.role || "admin"}`);
+        await emitConfig();
+        if (callback) callback({ success: true, user });
+      } catch (err) {
+        if (callback) callback({ success: false, error: err.message });
+      }
+    });
+
+    socket.on("config:removeUser", async ({ id }, callback) => {
+      try {
+        await storage.removeUser(id);
+        await storage.logActivity("auth", `Access token revoked.`);
+        await emitConfig();
+        if (callback) callback({ success: true });
+      } catch (err) {
+        if (callback) callback({ success: false, error: err.message });
+      }
+    });
+
     // Terminal Management
     socket.on("terminal:create", async (options, callback) => {
       try {
         const terminal = await terminalManager.createTerminal(options);
+        await storage.logActivity("terminal", `Session created: ${terminal.name}`);
         await emitConfig();
         if (callback) callback({ success: true, terminalId: terminal.id });
       } catch (err) {
@@ -139,14 +156,20 @@ function registerSocketServer(io, config) {
       }
     });
 
-    socket.on("terminal:kill", ({ terminalId }) => {
+    socket.on("terminal:kill", async ({ terminalId }) => {
+      const termInfo = terminalManager.getAllTerminals().find(t => t.id === terminalId);
+      if (termInfo) {
+        await storage.logActivity("terminal", `Session terminated: ${termInfo.name}`);
+      }
       terminalManager.killTerminal(terminalId);
       emitConfig();
     });
 
-    socket.on("terminal:rename", ({ terminalId, name }) => {
+    socket.on("terminal:rename", async ({ terminalId, name }) => {
+      console.log("RECEIVED terminal:rename", { terminalId, name });
       if (terminalId && name) {
         terminalManager.renameTerminal(terminalId, name);
+        await storage.logActivity("terminal", `Session renamed: ${name}`);
         emitConfig();
       }
     });

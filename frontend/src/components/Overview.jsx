@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { Clock, Activity, Folder, Server as ServerIcon, Play, Plus, X, Edit2, Trash2, Home } from "lucide-react";
 import { useAppContext } from "../context/AppContext";
 import { PathPicker } from "./PathPicker";
+import { isMobileDevice } from "../utils/device";
 
 function Overview({ defaultTab = "servers" }) {
   const { 
@@ -48,12 +49,10 @@ function Overview({ defaultTab = "servers" }) {
         } else {
           await addProject(data);
         }
+      } else if (editingItem?.data) {
+        await editServer(editingItem.data.id, data);
       } else {
-        if (editingItem?.data) {
-          await editServer(editingItem.data.id, data);
-        } else {
-          await addServer(data);
-        }
+        await addServer(data);
       }
       handleCloseModal();
     } catch (err) {
@@ -128,7 +127,7 @@ function Overview({ defaultTab = "servers" }) {
                   onChange={e => setSelectedServerId(e.target.value)}
                   className="bg-transparent border-none text-slate-200 font-mono text-xs focus:outline-none cursor-pointer"
                 >
-                  <option value="local">Local Machine</option>
+                  <option value="local">{isMobileDevice() ? "My PC (Host Server)" : "Host PC (Local)"}</option>
                   {servers.map(s => (
                     <option key={s.id} value={s.id}>{s.name} ({s.host})</option>
                   ))}
@@ -325,7 +324,7 @@ function AddModal({ type, initialData, servers, onClose, onSave }) {
                   value={serverId} onChange={e => setServerId(e.target.value)}
                   className="w-full bg-slate-900/50 border border-white/10 rounded-lg px-3 py-2 text-slate-200 font-mono text-sm focus:outline-none focus:border-primary-500 transition-colors"
                 >
-                   <option value="local">Local Machine</option>
+                   <option value="local">{isMobileDevice() ? "My PC (Host Server)" : "Host PC (Local)"}</option>
                    {servers.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
                 </select>
               </div>
