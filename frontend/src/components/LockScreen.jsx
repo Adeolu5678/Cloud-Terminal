@@ -23,11 +23,24 @@ function LockScreen({ onUnlock }) {
       current++;
       if (current >= sequence.length) {
         clearInterval(interval);
-        setTimeout(() => setIsBooting(false), 500);
+        setTimeout(() => setIsBooting(false), 50);
       }
-    }, 400);
+    }, 100);
 
-    return () => clearInterval(interval);
+    const handleSkip = (e) => {
+      if (e.key === "Enter" || e.key === "Escape" || e.key === " ") {
+        clearInterval(interval);
+        setBootText(sequence.join("\n") + "\n");
+        setIsBooting(false);
+      }
+    };
+    
+    window.addEventListener("keydown", handleSkip);
+
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener("keydown", handleSkip);
+    };
   }, []);
 
   const handleSubmit = (e) => {

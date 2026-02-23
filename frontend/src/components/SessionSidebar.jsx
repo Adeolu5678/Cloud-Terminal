@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { LayoutGrid, TerminalSquare, Folder, LayoutTemplate, Activity, Users, FileText, Settings, Plus, UserCircle, LogOut, MoreVertical, Edit2, Trash2, ChevronRight, ChevronDown } from "lucide-react";
 import { useAppContext } from "../context/AppContext";
 import { isMobileDevice } from "../utils/device";
+import { useEditableNode } from "../hooks/useEditableNode";
 
 const MAIN_LINKS = [
   { id: "overview", label: "Overview", icon: LayoutGrid },
@@ -21,8 +22,6 @@ function SessionSidebar({ projects, servers, terminals, onSwitch, currentView, s
   const { killTerminal, socket } = useAppContext();
   // sidebar is always static — no mobile toggle needed
   const [dropdownSessionId, setDropdownSessionId] = useState(null);
-  const [editingSessionId, setEditingSessionId] = useState(null);
-  const [editingSessionName, setEditingSessionName] = useState("");
   const [collapsedGroups, setCollapsedGroups] = useState({});
   const [dropdownPos, setDropdownPos] = useState({ top: 0, left: 0 });
 
@@ -41,28 +40,17 @@ function SessionSidebar({ projects, servers, terminals, onSwitch, currentView, s
     return () => window.removeEventListener('click', handleOutsideClick);
   }, []);
 
-  // useRef holds the latest typed value so closures in onBlur/onKeyDown
-  // always see the freshest name regardless of when React batches re-renders.
-  const editingNameRef = useRef("");
-  // hasSaved prevents the Enter→blur double-fire:
-  // pressing Enter calls saveEditedSession() which unmounts the input;
-  // React fires onBlur on the unmounting input — this flag stops a second emit.
-  const hasSavedRef = useRef(false);
-
-  const saveEditedSession = useCallback(() => {
-    if (hasSavedRef.current) return;   // already saved — ignore the blur double-fire
-    hasSavedRef.current = true;
-    const name = editingNameRef.current.trim();
-    if (editingSessionId && socket && name) {
-      socket.emit("terminal:rename", { terminalId: editingSessionId, name });
-    }
-    setEditingSessionId(null);
-  }, [editingSessionId, socket]);
-
-  const handleTabKeyDown = useCallback((e) => {
-    if (e.key === 'Enter') { e.preventDefault(); saveEditedSession(); }
-    if (e.key === 'Escape') { hasSavedRef.current = true; setEditingSessionId(null); }
-  }, [saveEditedSession]);
+  const { 
+    editingId: editingSessionId, 
+    editingName: editingSessionName, 
+    setEditingName: setEditingSessionName, 
+    nameRef: editingNameRef, 
+    startEditing: startEditingRaw, 
+    saveEditing: saveEditedSession, 
+    handleKeyDown: handleTabKeyDown 
+  } = useEditableNode((id, name) => {
+    if (socket) socket.emit("terminal:rename", { terminalId: id, name });
+  });
   const handleNav = (id) => {
     setCurrentView(id);
   };
@@ -266,10 +254,7 @@ function SessionSidebar({ projects, servers, terminals, onSwitch, currentView, s
                   onClick={(e) => {
                     e.stopPropagation();
                     const initialName = t.name || 'Terminal';
-                    hasSavedRef.current = false;        // reset for new rename session
-                    editingNameRef.current = initialName;   // prime ref with initial value
-                    setEditingSessionName(initialName);
-                    setEditingSessionId(t.id);
+                    startEditingRaw(t.id, initialName);
                     setDropdownSessionId(null);
                   }}
                   className="w-full text-left px-3 py-2 text-xs font-mono text-slate-300 hover:bg-[#007acc] hover:text-white flex items-center gap-2 transition-colors"

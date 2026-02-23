@@ -1,7 +1,7 @@
 const fs = require('fs/promises');
 const path = require('path');
-// Use crypto for IDs
 const crypto = require('crypto');
+
 function generateId() {
   return crypto.randomUUID();
 }
@@ -11,6 +11,14 @@ const PROJECTS_FILE = path.join(DATA_DIR, 'projects.json');
 const SERVERS_FILE = path.join(DATA_DIR, 'servers.json');
 const USERS_FILE = path.join(DATA_DIR, 'users.json');
 const ACTIVITY_FILE = path.join(DATA_DIR, 'activity.json');
+
+// In-memory cache
+let state = {
+  projects: [],
+  servers: [],
+  users: [],
+  activity: [],
+};
 
 async function ensureDataDir() {
   try {
@@ -26,15 +34,18 @@ async function readFileOrDefault(filePath, defaultData) {
     return JSON.parse(data);
   } catch (err) {
     if (err.code === 'ENOENT') {
-      await fs.writeFile(filePath, JSON.stringify(defaultData, null, 2), 'utf8');
+      await writeAtomic(filePath, defaultData);
       return defaultData;
     }
     throw err;
   }
 }
 
-async function writeFile(filePath, data) {
-  await fs.writeFile(filePath, JSON.stringify(data, null, 2), 'utf8');
+// Atomic write to prevent file corruption
+async function writeAtomic(filePath, data) {
+  const tmpPath = `${filePath}.${generateId()}.tmp`;
+  await fs.writeFile(tmpPath, JSON.stringify(data, null, 2), 'utf8');
+  await fs.rename(tmpPath, filePath);
 }
 
 let writeMutex = Promise.resolve();
@@ -53,57 +64,57 @@ async function withLock(fn) {
 // Public API
 async function init() {
   await ensureDataDir();
-  await readFileOrDefault(PROJECTS_FILE, []);
-  await readFileOrDefault(SERVERS_FILE, []);
-  await readFileOrDefault(USERS_FILE, []);
-  await readFileOrDefault(ACTIVITY_FILE, []);
+  state.projects = await readFileOrDefault(PROJECTS_FILE, []);
+  state.servers = await readFileOrDefault(SERVERS_FILE, []);
+  state.users = await readFileOrDefault(USERS_FILE, []);
+  state.activity = await readFileOrDefault(ACTIVITY_FILE, []);
 }
 
 async function getProjects() {
-  return readFileOrDefault(PROJECTS_FILE, []);
+  return state.projects;
 }
 
 async function getServers() {
-  return readFileOrDefault(SERVERS_FILE, []);
+  return state.servers;
 }
 
 async function getUsers() {
-  return readFileOrDefault(USERS_FILE, []);
+  return state.users;
 }
 
 async function getActivity() {
-  return readFileOrDefault(ACTIVITY_FILE, []);
+  return state.activity;
 }
 
 async function logActivity(type, message) {
   return withLock(async () => {
-    const logs = await getActivity();
     const newLog = {
       id: generateId(),
       type,
       message,
       createdAt: new Date().toISOString()
     };
-    logs.unshift(newLog);
+    state.activity.unshift(newLog);
     // Keep only last 100 activities
-    if (logs.length > 100) logs.length = 100;
-    await writeFile(ACTIVITY_FILE, logs);
+    if (state.activity.length > 100) state.activity.length = 100;
+    await writeAtomic(ACTIVITY_FILE, state.activity);
     return newLog;
   });
 }
 
+// No disk I/O in emitConfig!
 async function emitConfig(io, terminalManager) {
   if (!io) return;
   try {
-    const projects = await getProjects();
-    const servers = await getServers();
-    const users = await getUsers();
-    const activity = await getActivity();
-    
-    // terminalManager might be passed in, or we might just omit terminals if not provided
     const terminals = terminalManager ? terminalManager.getAllTerminals() : [];
     
-    io.emit("config:sync", { projects, servers, users, activity, terminals });
+    io.emit("config:sync", { 
+      projects: state.projects, 
+      servers: state.servers, 
+      users: state.users, 
+      activity: state.activity, 
+      terminals 
+    });
   } catch (err) {
     console.error("Failed to emit config:", err);
   }
@@ -111,7 +122,6 @@ async function emitConfig(io, terminalManager) {
 
 async function addProject({ name, path: projectPath, serverId }) {
   return withLock(async () => {
-    const projects = await getProjects();
     const newProject = {
       id: generateId(),
       name,
@@ -119,17 +129,16 @@ async function addProject({ name, path: projectPath, serverId }) {
       serverId: serverId || 'local', // defaults to local
       createdAt: new Date().toISOString()
     };
-    projects.push(newProject);
-    await writeFile(PROJECTS_FILE, projects);
+    state.projects.push(newProject);
+    await writeAtomic(PROJECTS_FILE, state.projects);
     return newProject;
   });
 }
 
 async function editProject(id, updates) {
   return withLock(async () => {
-    const projects = await getProjects();
     let updatedProject = null;
-    const updated = projects.map(p => {
+    state.projects = state.projects.map(p => {
       if (p.id === id) {
         updatedProject = { ...p, ...updates };
         return updatedProject;
@@ -137,7 +146,7 @@ async function editProject(id, updates) {
       return p;
     });
     if (updatedProject) {
-      await writeFile(PROJECTS_FILE, updated);
+      await writeAtomic(PROJECTS_FILE, state.projects);
     }
     return updatedProject;
   });
@@ -145,7 +154,6 @@ async function editProject(id, updates) {
 
 async function addServer({ name, host, user, password, port = 22 }) {
   return withLock(async () => {
-    const servers = await getServers();
     const newServer = {
       id: generateId(),
       name,
@@ -155,17 +163,16 @@ async function addServer({ name, host, user, password, port = 22 }) {
       port: parseInt(port, 10),
       createdAt: new Date().toISOString()
     };
-    servers.push(newServer);
-    await writeFile(SERVERS_FILE, servers);
+    state.servers.push(newServer);
+    await writeAtomic(SERVERS_FILE, state.servers);
     return newServer;
   });
 }
 
 async function editServer(id, updates) {
   return withLock(async () => {
-    const servers = await getServers();
     let updatedServer = null;
-    const updated = servers.map(s => {
+    state.servers = state.servers.map(s => {
       if (s.id === id) {
         updatedServer = { ...s, ...updates };
         return updatedServer;
@@ -173,7 +180,7 @@ async function editServer(id, updates) {
       return s;
     });
     if (updatedServer) {
-      await writeFile(SERVERS_FILE, updated);
+      await writeAtomic(SERVERS_FILE, state.servers);
     }
     return updatedServer;
   });
@@ -181,40 +188,36 @@ async function editServer(id, updates) {
 
 async function removeProject(id) {
   return withLock(async () => {
-    const projects = await getProjects();
-    const updated = projects.filter(p => p.id !== id);
-    await writeFile(PROJECTS_FILE, updated);
+    state.projects = state.projects.filter(p => p.id !== id);
+    await writeAtomic(PROJECTS_FILE, state.projects);
   });
 }
 
 async function removeServer(id) {
   return withLock(async () => {
-    const servers = await getServers();
-    const updated = servers.filter(s => s.id !== id);
-    await writeFile(SERVERS_FILE, updated);
+    state.servers = state.servers.filter(s => s.id !== id);
+    await writeAtomic(SERVERS_FILE, state.servers);
   });
 }
 
 async function addUser(token, role = "admin") {
   return withLock(async () => {
-    const users = await getUsers();
     const newUser = {
       id: generateId(),
       token,
       role,
       createdAt: new Date().toISOString()
     };
-    users.push(newUser);
-    await writeFile(USERS_FILE, users);
+    state.users.push(newUser);
+    await writeAtomic(USERS_FILE, state.users);
     return newUser;
   });
 }
 
 async function removeUser(id) {
   return withLock(async () => {
-    const users = await getUsers();
-    const updated = users.filter(u => u.id !== id);
-    await writeFile(USERS_FILE, updated);
+    state.users = state.users.filter(u => u.id !== id);
+    await writeAtomic(USERS_FILE, state.users);
   });
 }
 

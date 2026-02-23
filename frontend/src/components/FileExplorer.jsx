@@ -12,7 +12,7 @@ function FileIcon({ name, isDirectory, isOpen }) {
   return <File className="text-slate-500" size={16} />;
 }
 
-function FileNode({ node, serverId, level, onSelectFile, onDelete, onRename }) {
+function FileNode({ node, serverId, level, onSelectFile, onDelete, onRename, onCreateResource }) {
   const { fsList } = useAppContext();
   const [isOpen, setIsOpen] = useState(false);
   const [children, setChildren] = useState(null);
@@ -73,6 +73,12 @@ function FileNode({ node, serverId, level, onSelectFile, onDelete, onRename }) {
         
         {/* Hover Actions */}
         <div className="hidden group-hover:flex items-center gap-1 pr-2">
+          {node.isDirectory && (
+            <>
+              <button onClick={(e) => { e.stopPropagation(); onCreateResource(node.path, false); }} className="p-1 text-slate-400 hover:text-white rounded hover:bg-white/10" title="New File"><FilePlus size={12} /></button>
+              <button onClick={(e) => { e.stopPropagation(); onCreateResource(node.path, true); }} className="p-1 text-slate-400 hover:text-white rounded hover:bg-white/10" title="New Folder"><FolderPlus size={12} /></button>
+            </>
+          )}
           {node.isDirectory && isOpen && (
             <button onClick={handleRefresh} className="p-1 text-slate-400 hover:text-white rounded hover:bg-white/10" title="Refresh">
               <RefreshCw size={12} />
@@ -109,6 +115,7 @@ function FileNode({ node, serverId, level, onSelectFile, onDelete, onRename }) {
                  onSelectFile={onSelectFile}
                  onDelete={onDelete}
                  onRename={onRename}
+                 onCreateResource={onCreateResource}
                />
             ))
           )}
@@ -161,11 +168,11 @@ export function FileExplorer({ project, onSelectFile }) {
     const newName = window.prompt("Enter new name:", node.name);
     if (!newName || newName === node.name) return;
     
-    // Simple naive path replacement assuming name is at the end
-    const lastSlash = node.path.lastIndexOf('/');
-    const lastBackslash = node.path.lastIndexOf('\\');
-    const splitIndex = Math.max(lastSlash, lastBackslash);
-    const newPath = node.path.substring(0, splitIndex + 1) + newName;
+    // Robust path handling utilizing standard string manipulation for base paths
+    const pathParts = node.path.split(/[\\/]/);
+    pathParts.pop(); // Remove old name
+    pathParts.push(newName); // Append new name
+    const newPath = pathParts.join(node.path.includes('\\') ? '\\' : '/');
 
     try {
       await fsRename(serverId, node.path, newPath);
@@ -175,25 +182,20 @@ export function FileExplorer({ project, onSelectFile }) {
     }
   };
 
-  const handleCreateFile = async () => {
-    const name = window.prompt("New File Name:");
+  const handleCreateResource = async (basePath, isDir) => {
+    const name = window.prompt(`New ${isDir ? 'Folder' : 'File'} Name:`);
     if (!name) return;
-    // VERY NAIVE ROOT CREATE - in a real app we'd track the focused directory
-    const newPath = rootPath + (rootPath.includes('\\') ? '\\' : '/') + name;
-    try {
-      await fsWrite(serverId, newPath, "");
-      loadRoot();
-    } catch (err) {
-      alert("Error: " + err.message);
-    }
-  };
 
-  const handleCreateDir = async () => {
-    const name = window.prompt("New Folder Name:");
-    if (!name) return;
-    const newPath = rootPath + (rootPath.includes('\\') ? '\\' : '/') + name;
+    const separator = basePath.includes('\\') ? '\\' : '/';
+    // Ensure we do not add a double slash if basePath ends with a slash (can happen at roots)
+    const targetPath = basePath.endsWith(separator) ? `${basePath}${name}` : `${basePath}${separator}${name}`;
+    
     try {
-      await fsMkdir(serverId, newPath);
+      if (isDir) {
+        await fsMkdir(serverId, targetPath);
+      } else {
+        await fsWrite(serverId, targetPath, "");
+      }
       loadRoot();
     } catch (err) {
       alert("Error: " + err.message);
@@ -208,8 +210,8 @@ export function FileExplorer({ project, onSelectFile }) {
       <div className="flex items-center justify-between px-4 py-2 uppercase text-xs font-bold text-slate-400 tracking-wider">
         <span>Explorer: {project.name}</span>
         <div className="flex items-center gap-2">
-          <button onClick={handleCreateFile} className="hover:text-white transition-colors" title="New File"><FilePlus size={14}/></button>
-          <button onClick={handleCreateDir} className="hover:text-white transition-colors" title="New Folder"><FolderPlus size={14}/></button>
+          <button onClick={() => handleCreateResource(rootPath, false)} className="hover:text-white transition-colors" title="New File"><FilePlus size={14}/></button>
+          <button onClick={() => handleCreateResource(rootPath, true)} className="hover:text-white transition-colors" title="New Folder"><FolderPlus size={14}/></button>
           <button onClick={loadRoot} className="hover:text-white transition-colors" title="Refresh"><RefreshCw size={14}/></button>
         </div>
       </div>
@@ -228,6 +230,7 @@ export function FileExplorer({ project, onSelectFile }) {
             onSelectFile={onSelectFile}
             onDelete={handleDelete}
             onRename={handleRename}
+            onCreateResource={handleCreateResource}
           />
         ))}
       </div>

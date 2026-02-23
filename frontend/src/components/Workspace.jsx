@@ -1,9 +1,10 @@
-import React, { useState, useEffect, useRef, useCallback } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import { Folder, Plus, X, Terminal as TerminalIcon, MoreVertical, Edit2, Trash2 } from "lucide-react";
 import { useAppContext } from "../context/AppContext";
 import { FileExplorer } from "./FileExplorer";
 import TerminalView from "./TerminalView";
 import { EditorView } from "./EditorView";
+import { useEditableNode } from "../hooks/useEditableNode";
 
 function Workspace() {
   const { projects, terminals, createTerminal, killTerminal, socket } = useAppContext();
@@ -11,8 +12,6 @@ function Workspace() {
   const [activeTabId, setActiveTabId] = useState(null); // 'term-id' or 'file-path'
   const [openFiles, setOpenFiles] = useState([]); // [{ name, path, isDirty }]
   const [mountedTabs, setMountedTabs] = useState(new Set());
-  const [editingTabId, setEditingTabId] = useState(null);
-  const [editingTabName, setEditingTabName] = useState("");
   const [dropdownTabId, setDropdownTabId] = useState(null);
 
   // Tab dropdown outside-click: data-attribute approach (same as SessionSidebar)
@@ -90,33 +89,22 @@ function Workspace() {
     setOpenFiles(files => files.map(f => f.path === path ? { ...f, isDirty } : f));
   };
 
-  // Refs prevent stale-closure bugs when onBlur fires after Enter has already saved
-  const editingTabNameRef = useRef("");
-  const hasSavedTabRef = useRef(false);
+  const { 
+    editingId: editingTabId, 
+    editingName: editingTabName, 
+    setEditingName: setEditingTabName, 
+    nameRef: editingTabNameRef, 
+    startEditing: startEditingTabRaw, 
+    saveEditing: saveEditedTab, 
+    handleKeyDown: handleTabKeyDown 
+  } = useEditableNode((id, name) => {
+    if (socket) socket.emit("terminal:rename", { terminalId: id, name });
+  });
 
   const startEditingTab = useCallback((e, t) => {
     e.stopPropagation();
-    const initialName = t.name || 'Terminal';
-    hasSavedTabRef.current = false;
-    editingTabNameRef.current = initialName;
-    setEditingTabId(t.id);
-    setEditingTabName(initialName);
-  }, []);
-
-  const saveEditedTab = useCallback(() => {
-    if (hasSavedTabRef.current) return;
-    hasSavedTabRef.current = true;
-    const name = editingTabNameRef.current.trim();
-    if (editingTabId && socket && name) {
-      socket.emit("terminal:rename", { terminalId: editingTabId, name });
-    }
-    setEditingTabId(null);
-  }, [editingTabId, socket]);
-
-  const handleTabKeyDown = useCallback((e) => {
-    if (e.key === 'Enter') { e.preventDefault(); saveEditedTab(); }
-    if (e.key === 'Escape') { hasSavedTabRef.current = true; setEditingTabId(null); }
-  }, [saveEditedTab]);
+    startEditingTabRaw(t.id, t.name || 'Terminal');
+  }, [startEditingTabRaw]);
 
   const activeProject = projects.find(p => p.id === activeProjectId);
 
@@ -180,6 +168,7 @@ function Workspace() {
               role="button" // Added role="button"
               tabIndex={0} // Added tabIndex={0}
               onClick={() => setActiveTabId(`file-${f.path}`)}
+              onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setActiveTabId(`file-${f.path}`); } }}
               className={`flex items-center gap-2 group px-3 py-1.5 border-r border-[#333333] border-t-2 cursor-pointer min-w-[120px] max-w-[200px] h-full ${activeTabId === `file-${f.path}` ? 'bg-[#1e1e1e] border-t-[#007acc] text-white' : 'bg-[#2d2d2d] border-t-transparent text-slate-400 hover:bg-[#2d2d2d]/80'}`}
             >
                <span className="text-xs font-mono truncate flex-1 select-none pr-2">
@@ -202,6 +191,7 @@ function Workspace() {
               role="button" // Added role="button"
               tabIndex={0} // Added tabIndex={0}
               onClick={() => setActiveTabId(`term-${t.id}`)}
+              onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setActiveTabId(`term-${t.id}`); } }}
               onDoubleClick={(e) => startEditingTab(e, t)}
               className={`flex items-center gap-2 group/tab px-3 py-1.5 border-r border-[#333333] border-t-2 cursor-pointer min-w-[120px] max-w-[200px] h-full ${activeTabId === `term-${t.id}` ? 'bg-[#1e1e1e] border-t-[#007acc] text-white' : 'bg-[#2d2d2d] border-t-transparent text-slate-400 hover:bg-[#2d2d2d]/80'}`}
             >

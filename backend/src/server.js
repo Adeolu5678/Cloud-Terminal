@@ -13,10 +13,12 @@ const app = express();
 
 // Initialize JSON database
 init().catch(console.error);
-const allowedOrigins =
-  process.env.CORS_ORIGIN?.split(",")
-    .map((origin) => origin.trim())
-    .filter((origin) => origin.length > 0) || "*";
+const defaultOrigins = ["http://localhost:5173", "http://localhost:3000", "http://127.0.0.1:5173"];
+const allowedOrigins = process.env.CORS_ORIGIN
+  ? process.env.CORS_ORIGIN.split(",")
+      .map((origin) => origin.trim())
+      .filter((origin) => origin.length > 0)
+  : defaultOrigins;
 
 app.use(cors({ origin: allowedOrigins }));
 
@@ -38,4 +40,11 @@ const port = Number(process.env.PORT || 3000);
 server.listen(port, () => {
   // eslint-disable-next-line no-console
   console.log(`Cloud Terminal backend listening on :${port}`);
+  
+  if (!process.env.SOCKET_AUTH_TOKEN || process.env.SOCKET_AUTH_TOKEN === "change-me") {
+    // eslint-disable-next-line no-console
+    console.warn("\n⚠️  WARNING: SOCKET_AUTH_TOKEN is not set or using the default 'change-me'!");
+    // eslint-disable-next-line no-console
+    console.warn("   This is highly insecure for production environments.\n");
+  }
 });

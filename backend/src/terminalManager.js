@@ -8,6 +8,10 @@ const { getProjects, getServers } = require('./storage');
 const isWindows = os.platform() === 'win32';
 const defaultShell = isWindows ? 'powershell.exe' : (process.env.SHELL || 'bash');
 
+const escapeShellArg = (arg) => {
+  return `'${String(arg).replace(/'/g, "'\\''")}'`;
+};
+
 class TerminalManager extends EventEmitter {
   constructor() {
     super();
@@ -54,7 +58,7 @@ class TerminalManager extends EventEmitter {
                   return reject(err);
                 }
 
-                stream.write(`cd "${project.path}" && clear || cls\n`);
+                stream.write(`cd ${escapeShellArg(project.path)} && clear || cls\n`);
 
                 const normalizedPty = {
                   onData: (cb) => {
@@ -84,7 +88,7 @@ class TerminalManager extends EventEmitter {
 
                 normalizedPty.onData((data) => {
                   terminal.history += data;
-                  if (terminal.history.length > 50000) terminal.history = terminal.history.slice(-50000);
+                  if (terminal.history.length > 100000) terminal.history = terminal.history.slice(-50000);
                   this.emit('output', id, data);
                 });
 
@@ -129,7 +133,7 @@ class TerminalManager extends EventEmitter {
 
           ptyProcess.onData((data) => {
             terminal.history += data;
-            if (terminal.history.length > 50000) terminal.history = terminal.history.slice(-50000);
+            if (terminal.history.length > 100000) terminal.history = terminal.history.slice(-50000);
             this.emit('output', id, data);
           });
 
@@ -186,7 +190,7 @@ class TerminalManager extends EventEmitter {
 
               normalizedPty.onData((data) => {
                 terminal.history += data;
-                if (terminal.history.length > 50000) terminal.history = terminal.history.slice(-50000);
+                if (terminal.history.length > 100000) terminal.history = terminal.history.slice(-50000);
                 this.emit('output', id, data);
               });
 
@@ -229,7 +233,7 @@ class TerminalManager extends EventEmitter {
 
           ptyProcess.onData((data) => {
             terminal.history += data;
-            if (terminal.history.length > 50000) terminal.history = terminal.history.slice(-50000);
+            if (terminal.history.length > 100000) terminal.history = terminal.history.slice(-50000);
             this.emit('output', id, data);
           });
 

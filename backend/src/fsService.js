@@ -4,6 +4,11 @@ const os = require('os');
 const { Client } = require('ssh2');
 const storage = require('./storage');
 
+// Utility to safely escape shell arguments
+const escapeShellArg = (arg) => {
+  return `'${String(arg).replace(/'/g, "'\\''")}'`;
+};
+
 // Utility to get an SSH client and SFTP session
 const getSftp = async (serverId) => {
   return new Promise(async (resolve, reject) => {
@@ -149,7 +154,7 @@ class FsService {
           
           if (isDir) {
             // SFTP rmdir only works on empty dirs. Use exec for recursive delete.
-            conn.exec(`rm -rf "${filePath}"`, (err, stream) => {
+            conn.exec(`rm -rf ${escapeShellArg(filePath)}`, (err, stream) => {
               if (err) { conn.end(); return reject(err); }
               stream.on('close', () => { conn.end(); resolve({ path: filePath, success: true }); });
             });
@@ -189,7 +194,7 @@ class FsService {
       const { conn, sftp } = await getSftp(serverId);
       return new Promise((resolve, reject) => {
         // SFTP mkdir doesn't do recursive. Use exec
-        conn.exec(`mkdir -p "${dirPath}"`, (err, stream) => {
+        conn.exec(`mkdir -p ${escapeShellArg(dirPath)}`, (err, stream) => {
           if (err) { conn.end(); return reject(err); }
           stream.on('close', () => { conn.end(); resolve({ path: dirPath, success: true }); });
         });
