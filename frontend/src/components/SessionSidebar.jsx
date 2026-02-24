@@ -1,8 +1,10 @@
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect } from "react";
 import { LayoutGrid, TerminalSquare, Folder, LayoutTemplate, Activity, Users, FileText, Settings, Plus, UserCircle, LogOut, MoreVertical, Edit2, Trash2, ChevronRight, ChevronDown } from "lucide-react";
 import { useAppContext } from "../context/AppContext";
 import { isMobileDevice } from "../utils/device";
 import { useEditableNode } from "../hooks/useEditableNode";
+import { useUser, useClerk } from "@clerk/clerk-react";
+import SettingsModal from "./SettingsModal";
 
 const MAIN_LINKS = [
   { id: "overview", label: "Overview", icon: LayoutGrid },
@@ -24,6 +26,9 @@ function SessionSidebar({ projects, servers, terminals, onSwitch, currentView, s
   const [dropdownSessionId, setDropdownSessionId] = useState(null);
   const [collapsedGroups, setCollapsedGroups] = useState({});
   const [dropdownPos, setDropdownPos] = useState({ top: 0, left: 0 });
+  const [showSettings, setShowSettings] = useState(false);
+  const { user } = useUser();
+  const { signOut } = useClerk();
 
   // Bug 2 fix: Use a data-attribute to identify dropdown triggers instead of
   // a single ref (which can only point to one element across a .map()).
@@ -212,6 +217,9 @@ function SessionSidebar({ projects, servers, terminals, onSwitch, currentView, s
                 <li key={link.id}>
                   <button
                     type="button"
+                    onClick={() => {
+                      if (link.id === "settings") setShowSettings(true);
+                    }}
                     className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-left text-sm font-mono text-slate-400 hover:bg-slate-800/40 hover:text-slate-200 transition-all"
                   >
                     <Icon size={18} className="text-slate-500" />
@@ -225,14 +233,27 @@ function SessionSidebar({ projects, servers, terminals, onSwitch, currentView, s
 
         {/* User Profile Footer */}
         <div className="p-4 border-t border-white/5 bg-slate-900/30">
-          <div className="flex items-center justify-between group cursor-pointer p-2 rounded-xl hover:bg-slate-800/50 transition-colors">
-            <div className="flex items-center gap-3">
-              <div className="w-8 h-8 rounded-full bg-slate-800 border border-white/10 flex items-center justify-center text-slate-300 group-hover:text-primary-400 transition-colors">
-                 <UserCircle size={20} />
-              </div>
-              <span className="font-mono text-sm text-slate-200">admin</span>
+          <div 
+            role="button"
+            tabIndex={0}
+            className="flex items-center justify-between group cursor-pointer p-2 rounded-xl hover:bg-slate-800/50 transition-colors focus:outline-none focus:ring-2 focus:ring-primary-500"
+            onClick={() => signOut()}
+            onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); signOut(); } }}
+            title="Log out"
+          >
+            <div className="flex items-center gap-3 min-w-0">
+              {user?.imageUrl ? (
+                <img src={user.imageUrl} alt="Profile" className="w-8 h-8 rounded-full border border-white/10 flex-shrink-0" />
+              ) : (
+                <div className="w-8 h-8 rounded-full bg-slate-800 border border-white/10 flex items-center justify-center text-slate-300 group-hover:text-primary-400 transition-colors flex-shrink-0">
+                   <UserCircle size={20} />
+                </div>
+              )}
+              <span className="font-mono text-sm text-slate-200 truncate pr-2">
+                {user?.fullName || user?.primaryEmailAddress?.emailAddress || 'User'}
+              </span>
             </div>
-            <LogOut size={16} className="text-slate-600 group-hover:text-red-400 transition-colors" />
+            <LogOut size={16} className="text-slate-600 group-hover:text-red-400 transition-colors flex-shrink-0" />
           </div>
         </div>
       </aside>
@@ -273,6 +294,8 @@ function SessionSidebar({ projects, servers, terminals, onSwitch, currentView, s
           })()}
         </div>
       )}
+
+      {showSettings && <SettingsModal onClose={() => setShowSettings(false)} />}
     </>
   );
 }

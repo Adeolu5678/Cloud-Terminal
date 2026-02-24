@@ -13,6 +13,7 @@ function Workspace() {
   const [openFiles, setOpenFiles] = useState([]); // [{ name, path, isDirty }]
   const [mountedTabs, setMountedTabs] = useState(new Set());
   const [dropdownTabId, setDropdownTabId] = useState(null);
+  const [dropdownTabPos, setDropdownTabPos] = useState({ top: 0, left: 0 });
 
   // Tab dropdown outside-click: data-attribute approach (same as SessionSidebar)
   useEffect(() => {
@@ -29,7 +30,10 @@ function Workspace() {
   }, []);
 
   // Terminal tabs just for this workspace/project
-  const projectTerminals = terminals.filter(t => t.refId === activeProjectId && t.type === 'project');
+  const projectTerminals = React.useMemo(
+    () => terminals.filter(t => t.refId === activeProjectId && t.type === 'project'),
+    [terminals, activeProjectId]
+  );
 
   useEffect(() => {
     // If we have an active project but no active tab, auto-select the first terminal if exists
@@ -38,7 +42,7 @@ function Workspace() {
     } else if (projectTerminals.length === 0 && openFiles.length === 0) {
       setTimeout(() => setActiveTabId(null), 0);
     }
-  }, [activeProjectId, projectTerminals.length, activeTabId, openFiles.length, projectTerminals]);
+  }, [activeProjectId, projectTerminals, activeTabId, openFiles.length]);
 
   useEffect(() => {
     if (activeTabId) {
@@ -165,11 +169,12 @@ function Workspace() {
           {openFiles.map(f => (
             <div 
               key={f.path}
-              role="button" // Added role="button"
-              tabIndex={0} // Added tabIndex={0}
+              role="tab"
+              aria-selected={activeTabId === `file-${f.path}`}
+              tabIndex={0}
               onClick={() => setActiveTabId(`file-${f.path}`)}
               onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setActiveTabId(`file-${f.path}`); } }}
-              className={`flex items-center gap-2 group px-3 py-1.5 border-r border-[#333333] border-t-2 cursor-pointer min-w-[120px] max-w-[200px] h-full ${activeTabId === `file-${f.path}` ? 'bg-[#1e1e1e] border-t-[#007acc] text-white' : 'bg-[#2d2d2d] border-t-transparent text-slate-400 hover:bg-[#2d2d2d]/80'}`}
+              className={`flex items-center gap-2 group px-3 py-1.5 border-r border-[#333333] border-t-2 cursor-pointer min-w-[120px] max-w-[200px] h-full outline-none focus-visible:ring-1 focus-visible:ring-[#007acc] focus-visible:ring-inset ${activeTabId === `file-${f.path}` ? 'bg-[#1e1e1e] border-t-[#007acc] text-white' : 'bg-[#2d2d2d] border-t-transparent text-slate-400 hover:bg-[#2d2d2d]/80'}`}
             >
                <span className="text-xs font-mono truncate flex-1 select-none pr-2">
                  {f.isDirty ? <span className="text-[#e2c08d] mr-1">•</span> : null}
@@ -177,6 +182,7 @@ function Workspace() {
                </span>
                <button 
                  onClick={(e) => handleCloseFile(e, f.path)}
+                 aria-label={`Close ${f.name}`}
                  className={`p-0.5 rounded hover:bg-white/10 ${activeTabId === `file-${f.path}` ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`}
                >
                  <X size={12} />
@@ -188,12 +194,13 @@ function Workspace() {
           {projectTerminals.map(t => (
             <div 
               key={t.id}
-              role="button" // Added role="button"
-              tabIndex={0} // Added tabIndex={0}
+              role="tab"
+              aria-selected={activeTabId === `term-${t.id}`}
+              tabIndex={0}
               onClick={() => setActiveTabId(`term-${t.id}`)}
               onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setActiveTabId(`term-${t.id}`); } }}
               onDoubleClick={(e) => startEditingTab(e, t)}
-              className={`flex items-center gap-2 group/tab px-3 py-1.5 border-r border-[#333333] border-t-2 cursor-pointer min-w-[120px] max-w-[200px] h-full ${activeTabId === `term-${t.id}` ? 'bg-[#1e1e1e] border-t-[#007acc] text-white' : 'bg-[#2d2d2d] border-t-transparent text-slate-400 hover:bg-[#2d2d2d]/80'}`}
+              className={`flex items-center gap-2 group/tab px-3 py-1.5 border-r border-[#333333] border-t-2 cursor-pointer min-w-[120px] max-w-[200px] h-full outline-none focus-visible:ring-1 focus-visible:ring-[#007acc] focus-visible:ring-inset ${activeTabId === `term-${t.id}` ? 'bg-[#1e1e1e] border-t-[#007acc] text-white' : 'bg-[#2d2d2d] border-t-transparent text-slate-400 hover:bg-[#2d2d2d]/80'}`}
             >
                <TerminalIcon size={14} className={activeTabId === `term-${t.id}` ? 'text-[#007acc]' : 'text-slate-500'} />
                
@@ -208,25 +215,27 @@ function Workspace() {
                       className="flex-1 bg-[#1a1a1a] border border-[#007acc]/60 rounded px-1 text-xs font-mono text-white focus:outline-none w-full min-w-0"
                     />
                  ) : (
-                   <span className="text-xs font-mono truncate flex-1 select-none pr-2">{t.name || 'Terminal'}</span>
+                   <span className="text-xs font-mono truncate flex-1 select-none pr-2" title={t.name || 'Terminal'}>{t.name || 'Terminal'}</span>
                  )}
 
-                 <div data-tab-dropdown className="relative flex items-center">
-                   <button data-tab-dropdown onClick={(e) => { e.stopPropagation(); setDropdownTabId(dropdownTabId === t.id ? null : t.id); }} // Changed onMouseDown to onClick
-                     className={`p-0.5 rounded transition-colors ${activeTabId === `term-${t.id}` || dropdownTabId === t.id ? 'opacity-100 hover:bg-white/10' : 'opacity-0 group-hover/tab:opacity-100 text-slate-500 hover:text-white hover:bg-white/10'}`} // Updated class for group-hover
+                 <div data-tab-dropdown className="relative flex items-center pr-1">
+                   <button 
+                     data-tab-dropdown 
+                     aria-label={`Menu for ${t.name || 'Terminal'}`}
+                     onClick={(e) => { 
+                       e.stopPropagation(); 
+                       if (dropdownTabId === t.id) {
+                         setDropdownTabId(null);
+                       } else {
+                         const rect = e.currentTarget.getBoundingClientRect();
+                         setDropdownTabPos({ top: rect.bottom + 4, left: rect.left });
+                         setDropdownTabId(t.id);
+                       }
+                     }}
+                     className={`p-0.5 rounded transition-colors ${activeTabId === `term-${t.id}` || dropdownTabId === t.id ? 'opacity-100 bg-white/10 text-white' : 'opacity-0 group-hover/tab:opacity-100 text-slate-500 hover:text-white hover:bg-white/10'}`}
                    >
                      <MoreVertical size={14} />
                    </button>
-                   {dropdownTabId === t.id && (
-                     <div data-tab-dropdown className="absolute right-0 top-full mt-1 w-32 bg-[#252526] border border-[#333333] rounded-md shadow-xl py-1 z-50">
-                       <button data-tab-dropdown onClick={(e) => { e.stopPropagation(); startEditingTab(e, t); setDropdownTabId(null); }} className="w-full text-left px-3 py-1.5 text-xs font-mono text-slate-300 hover:bg-[#007acc] hover:text-white flex items-center gap-2">
-                         <Edit2 size={12}/> Rename
-                       </button>
-                       <button data-tab-dropdown onClick={(e) => { e.stopPropagation(); handleCloseTerminal(e, t.id); setDropdownTabId(null); }} className="w-full text-left px-3 py-1.5 text-xs font-mono text-slate-300 hover:bg-red-500 hover:text-white flex items-center gap-2">
-                         <Trash2 size={12}/> Delete
-                       </button>
-                     </div>
-                   )}
                  </div>
             </div>
           ))}
@@ -262,10 +271,7 @@ function Workspace() {
                 return (
                   <div 
                     key={f.path} 
-                    className="flex-1 w-full h-full min-h-0 relative" 
-                    style={{ 
-                      display: activeTabId === tabId ? 'block' : 'none'
-                    }}
+                    className={`flex-1 w-full h-full min-h-0 relative ${activeTabId === tabId ? 'block' : 'hidden'}`}
                   >
                     <EditorView 
                       fileNode={f} 
@@ -301,6 +307,38 @@ function Workspace() {
         </div>
         
       </div>
+
+      {/* Fixed position dropdown for terminal tabs escaping overflow limitations */}
+      {dropdownTabId && (
+        <div
+          data-tab-dropdown
+          style={{ position: 'fixed', top: dropdownTabPos.top, left: dropdownTabPos.left, zIndex: 9999 }}
+          className="w-32 bg-[#252526] border border-[#444] rounded-md shadow-xl py-1"
+        >
+          {(() => {
+            const t = projectTerminals.find(x => x.id === dropdownTabId);
+            if (!t) return null;
+            return (
+              <>
+                <button
+                  data-tab-dropdown
+                  onClick={(e) => { e.stopPropagation(); startEditingTab(e, t); setDropdownTabId(null); }}
+                  className="w-full text-left px-3 py-1.5 text-xs font-mono text-slate-300 hover:bg-[#007acc] hover:text-white flex items-center gap-2"
+                >
+                  <Edit2 size={12}/> Rename
+                </button>
+                <button
+                  data-tab-dropdown
+                  onClick={(e) => { e.stopPropagation(); handleCloseTerminal(e, t.id); setDropdownTabId(null); }}
+                  className="w-full text-left px-3 py-1.5 text-xs font-mono text-slate-300 hover:bg-red-500 hover:text-white flex items-center gap-2"
+                >
+                  <Trash2 size={12}/> Delete
+                </button>
+              </>
+            );
+          })()}
+        </div>
+      )}
 
     </div>
   );

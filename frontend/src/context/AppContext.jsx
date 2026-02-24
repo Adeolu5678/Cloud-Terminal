@@ -7,11 +7,11 @@ export function AppProvider({ socket, children }) {
   const [projects, setProjects] = useState([]);
   const [servers, setServers] = useState([]);
   const [terminals, setTerminals] = useState([]);
-  const [users, setUsers] = useState([]);
   const [activityLogs, setActivityLogs] = useState([]);
   
   // Track if we've received the first sync
   const [isSynced, setIsSynced] = useState(false);
+  const [isConnected, setIsConnected] = useState(socket ? socket.connected : false);
 
   useEffect(() => {
     if (!socket) return;
@@ -20,14 +20,20 @@ export function AppProvider({ socket, children }) {
       setProjects(data.projects || []);
       setServers(data.servers || []);
       setTerminals(data.terminals || []);
-      setUsers(data.users || []);
       setActivityLogs(data.activity || []);
       setIsSynced(true);
     };
 
+    const onConnect = () => setIsConnected(true);
+    const onDisconnect = () => setIsConnected(false);
+
+    socket.on('connect', onConnect);
+    socket.on('disconnect', onDisconnect);
     socket.on('config:sync', handleSync);
 
     return () => {
+      socket.off('connect', onConnect);
+      socket.off('disconnect', onDisconnect);
       socket.off('config:sync', handleSync);
     };
   }, [socket]);
@@ -66,26 +72,6 @@ export function AppProvider({ socket, children }) {
     return new Promise((resolve, reject) => {
       if (!socket) return reject(new Error("Socket not connected"));
       socket.emit('config:removeServer', { id }, (response) => {
-        if (response.success) resolve();
-        else reject(new Error(response.error));
-      });
-    });
-  }, [socket]);
-
-  const addUser = useCallback((tokenData) => {
-    return new Promise((resolve, reject) => {
-      if (!socket) return reject(new Error("Socket not connected"));
-      socket.emit('config:addUser', tokenData, (response) => {
-        if (response.success) resolve(response.user);
-        else reject(new Error(response.error));
-      });
-    });
-  }, [socket]);
-
-  const removeUser = useCallback((id) => {
-    return new Promise((resolve, reject) => {
-      if (!socket) return reject(new Error("Socket not connected"));
-      socket.emit('config:removeUser', { id }, (response) => {
         if (response.success) resolve();
         else reject(new Error(response.error));
       });
@@ -190,20 +176,18 @@ export function AppProvider({ socket, children }) {
 
   const value = {
     isSynced,
+    isConnected,
     socket,
     projects,
     servers,
     terminals,
-    users,
     activityLogs,
     addProject,
     addServer,
-    addUser,
     editProject,
     editServer,
     removeProject,
     removeServer,
-    removeUser,
     createTerminal,
     killTerminal,
     fsList,

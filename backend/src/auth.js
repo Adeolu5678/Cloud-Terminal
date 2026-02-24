@@ -1,29 +1,20 @@
-const crypto = require("node:crypto");
-const storage = require("./storage");
+const { verifyToken } = require('@clerk/clerk-sdk-node');
+const dotenv = require('dotenv');
+const path = require('path');
+dotenv.config({ path: path.resolve(process.cwd(), "../.env") });
 
-function safeCompare(token, expected) {
-  if (!token || !expected) return false;
-  const tokenBuffer = Buffer.from(String(token));
-  const expectedBuffer = Buffer.from(String(expected));
-  if (tokenBuffer.length !== expectedBuffer.length) return false;
-  return crypto.timingSafeEqual(tokenBuffer, expectedBuffer);
-}
-
-async function isAuthorized(token, expectedToken) {
-  if (safeCompare(token, expectedToken)) return true;
-
+async function isAuthorized(token) {
+  if (!token) return null;
   try {
-    const users = await storage.getUsers();
-    for (const user of users) {
-      if (safeCompare(token, user.token)) {
-        return true;
-      }
-    }
+    const verifiedToken = await verifyToken(token, {
+      secretKey: process.env.CLERK_SECRET_KEY,
+    });
+    const tier = verifiedToken.tier || verifiedToken?.public_metadata?.tier || 'free';
+    return { userId: verifiedToken.sub, tier };
   } catch (err) {
-    console.error("Failed to fetch users during auth:", err);
+    console.error("Clerk auth failed:", err.message);
+    return null;
   }
-
-  return false;
 }
 
 module.exports = { isAuthorized };

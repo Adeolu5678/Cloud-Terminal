@@ -2,6 +2,7 @@ const http = require("node:http");
 const path = require("node:path");
 const express = require("express");
 const cors = require("cors");
+const rateLimit = require("express-rate-limit");
 const { Server } = require("socket.io");
 const dotenv = require("dotenv");
 const { init } = require("./storage");
@@ -22,6 +23,17 @@ const allowedOrigins = process.env.CORS_ORIGIN
 
 app.use(cors({ origin: allowedOrigins }));
 
+app.set('trust proxy', 1);
+
+const limiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 200, // Limit each IP to 200 requests per window
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+app.use(limiter);
+
 app.get("/health", (_req, res) => {
   res.json({ status: "ok" });
 });
@@ -32,7 +44,6 @@ const io = new Server(server, {
 });
 
 registerSocketServer(io, {
-  authToken: process.env.SOCKET_AUTH_TOKEN || "change-me",
   tmuxSessionName: process.env.TMUX_SESSION_NAME || "cloud-term",
 });
 
@@ -40,11 +51,4 @@ const port = Number(process.env.PORT || 3000);
 server.listen(port, () => {
   // eslint-disable-next-line no-console
   console.log(`Cloud Terminal backend listening on :${port}`);
-  
-  if (!process.env.SOCKET_AUTH_TOKEN || process.env.SOCKET_AUTH_TOKEN === "change-me") {
-    // eslint-disable-next-line no-console
-    console.warn("\n⚠️  WARNING: SOCKET_AUTH_TOKEN is not set or using the default 'change-me'!");
-    // eslint-disable-next-line no-console
-    console.warn("   This is highly insecure for production environments.\n");
-  }
 });

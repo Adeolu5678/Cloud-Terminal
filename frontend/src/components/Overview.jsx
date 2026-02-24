@@ -1,10 +1,10 @@
 import { useState, useEffect } from "react";
-import { Clock, Activity, Folder, Server as ServerIcon, Play, Plus, X, Edit2, Trash2, Home } from "lucide-react";
+import { Clock, Activity, Folder, Server as ServerIcon, Play, Plus, X, Edit2, Trash2, Home, RefreshCw } from "lucide-react";
 import { useAppContext } from "../context/AppContext";
 import { PathPicker } from "./PathPicker";
 import { isMobileDevice } from "../utils/device";
 
-function Overview({ defaultTab = "servers" }) {
+function Overview({ defaultTab = "servers", onConnectTerminal }) {
   const { 
     projects, servers, terminals, 
     addProject, addServer, editProject, editServer, removeProject, removeServer, createTerminal 
@@ -19,15 +19,22 @@ function Overview({ defaultTab = "servers" }) {
   const [showAddModal, setShowAddModal] = useState(false);
   const [editingItem, setEditingItem] = useState(null); // { type, data }
   const [selectedServerId, setSelectedServerId] = useState("local");
+  const [connectingId, setConnectingId] = useState(null);
 
   const totalSessions = terminals.length;
   const activeNow = terminals.length;
 
   const handleConnect = async (type, refId) => {
     try {
-      await createTerminal(type, refId);
+      setConnectingId(refId);
+      const terminalId = await createTerminal(type, refId);
+      if (onConnectTerminal && terminalId) {
+        onConnectTerminal(terminalId);
+      }
     } catch (err) {
       alert("Failed to start terminal: " + err.message);
+    } finally {
+      setConnectingId(null);
     }
   };
 
@@ -144,6 +151,7 @@ function Overview({ defaultTab = "servers" }) {
               <ProjectCard 
                 key={p.id} 
                 project={p} 
+                isConnecting={connectingId === p.id}
                 onConnect={() => handleConnect("project", p.id)}
                 onEdit={() => handleEdit("projects", p)}
                 onDelete={() => {
@@ -159,6 +167,7 @@ function Overview({ defaultTab = "servers" }) {
               <ServerCard 
                 key={s.id} 
                 server={s} 
+                isConnecting={connectingId === s.id}
                 onConnect={() => handleConnect("server", s.id)}
                 onEdit={() => handleEdit("servers", s)}
                 onDelete={() => {
@@ -185,9 +194,29 @@ function Overview({ defaultTab = "servers" }) {
 }
 
 function EmptyState({ type, onAdd }) {
+  const isProject = type === "project";
+  const Icon = isProject ? Folder : ServerIcon;
+  const title = isProject ? "No Projects Found" : "No Servers Configured";
+  const desc = isProject 
+    ? "Create your first project workspace to start coding securely in the cloud."
+    : "Add your first SSH server environment to connect from your browser.";
+  
   return (
-    <div className="p-8 text-center text-slate-500 font-mono text-sm border border-white/5 rounded-2xl border-dashed">
-      No active {type}s found in this environment. <button onClick={onAdd} className="text-primary-400 hover:underline">Add a {type}</button> to get started.
+    <div className="flex flex-col items-center justify-center p-12 text-center border border-white/5 bg-slate-900/40 rounded-3xl mt-4">
+      <div className="relative mb-6">
+        <div className="absolute inset-0 bg-primary-500/20 blur-3xl rounded-full translate-y-2"></div>
+        <div className="w-20 h-20 bg-slate-800 border-t border-white/20 border-b-0 border-x-white/5 rounded-2xl flex items-center justify-center relative z-10 shadow-[0_10px_40px_rgba(0,0,0,0.5)]">
+          <Icon size={40} className="text-primary-400 drop-shadow-[0_0_15px_rgba(56,189,248,0.5)]" />
+        </div>
+      </div>
+      <h3 className="text-2xl font-bold font-mono text-slate-100 mb-2">{title}</h3>
+      <p className="text-sm font-mono text-slate-400 max-w-sm mb-8 leading-relaxed">{desc}</p>
+      <button 
+        onClick={onAdd}
+        className="px-6 py-3 bg-primary-600 hover:bg-primary-500 text-white rounded-xl font-mono text-sm font-bold tracking-wide shadow-[0_0_20px_rgba(56,189,248,0.3)] hover:shadow-[0_0_40px_rgba(56,189,248,0.6)] transition-all flex items-center gap-2 active:scale-95"
+      >
+        <Plus size={18} strokeWidth={3} /> Add {type === "project" ? "Project" : "Server"}
+      </button>
     </div>
   )
 }
@@ -210,7 +239,7 @@ function MetricCard({ title, value, subtext }) {
   );
 }
 
-function ServerCard({ server, onConnect, onEdit, onDelete }) {
+function ServerCard({ server, isConnecting, onConnect, onEdit, onDelete }) {
   return (
     <div className="glass-panel-premium p-4 md:p-5 rounded-2xl border-b-0 border-x-white/5 flex flex-col md:flex-row md:items-center justify-between gap-4 transition-all hover:border-primary-500/30 group">
       <div className="flex items-start gap-4">
@@ -228,21 +257,23 @@ function ServerCard({ server, onConnect, onEdit, onDelete }) {
       </div>
       <div className="flex flex-col items-end gap-2 mt-2 md:mt-0">
         <div className="flex items-center gap-2 mb-1">
-          <button onClick={onEdit} className="p-1.5 text-slate-400 hover:text-white bg-slate-800/80 hover:bg-slate-700 border border-white/5 rounded-lg transition-colors"><Edit2 size={12}/></button>
-          <button onClick={onDelete} className="p-1.5 text-red-400/80 hover:text-red-300 bg-red-500/10 hover:bg-red-500/20 border border-red-500/20 rounded-lg transition-colors"><Trash2 size={12}/></button>
+          <button onClick={onEdit} disabled={isConnecting} className="p-1.5 text-slate-400 hover:text-white bg-slate-800/80 hover:bg-slate-700 border border-white/5 rounded-lg transition-colors disabled:opacity-50"><Edit2 size={12}/></button>
+          <button onClick={onDelete} disabled={isConnecting} className="p-1.5 text-red-400/80 hover:text-red-300 bg-red-500/10 hover:bg-red-500/20 border border-red-500/20 rounded-lg transition-colors disabled:opacity-50"><Trash2 size={12}/></button>
         </div>
         <button 
            onClick={onConnect}
-           className="px-4 py-2 sm:px-5 sm:py-2 bg-primary-600 hover:bg-primary-500 text-white rounded-xl font-mono text-xs sm:text-sm tracking-wide shadow-[0_0_15px_rgba(56,189,248,0.3)] hover:shadow-[0_0_25px_rgba(56,189,248,0.5)] transition-all flex items-center gap-2 active:scale-95 border border-primary-400/50"
+           disabled={isConnecting}
+           className="px-4 py-2 sm:px-5 sm:py-2 bg-primary-600 hover:bg-primary-500 disabled:bg-primary-600/50 text-white rounded-xl font-mono text-xs sm:text-sm tracking-wide shadow-[0_0_15px_rgba(56,189,248,0.3)] hover:shadow-[0_0_25px_rgba(56,189,248,0.5)] transition-all flex items-center gap-2 active:scale-95 border border-primary-400/50"
         >
-          <Play size={14} fill="currentColor" /> Connect
+          {isConnecting ? <RefreshCw size={14} className="animate-spin" /> : <Play size={14} fill="currentColor" />}
+          {isConnecting ? "Connecting..." : "Connect"}
         </button>
       </div>
     </div>
   );
 }
 
-function ProjectCard({ project, onConnect, onEdit, onDelete }) {
+function ProjectCard({ project, isConnecting, onConnect, onEdit, onDelete }) {
   return (
     <div className="glass-panel-premium p-4 md:p-5 rounded-2xl border-b-0 border-x-white/5 flex flex-col md:flex-row md:items-center justify-between gap-4 transition-all hover:border-primary-500/30 group">
       <div className="flex items-start gap-4">
@@ -260,14 +291,16 @@ function ProjectCard({ project, onConnect, onEdit, onDelete }) {
       </div>
       <div className="flex flex-col items-end gap-2 mt-2 md:mt-0">
         <div className="flex items-center gap-2 mb-1">
-          <button onClick={onEdit} className="p-1.5 text-slate-400 hover:text-white bg-slate-800/80 hover:bg-slate-700 border border-white/5 rounded-lg transition-colors"><Edit2 size={12}/></button>
-          <button onClick={onDelete} className="p-1.5 text-red-400/80 hover:text-red-300 bg-red-500/10 hover:bg-red-500/20 border border-red-500/20 rounded-lg transition-colors"><Trash2 size={12}/></button>
+          <button onClick={onEdit} disabled={isConnecting} className="p-1.5 text-slate-400 hover:text-white bg-slate-800/80 hover:bg-slate-700 border border-white/5 rounded-lg transition-colors disabled:opacity-50"><Edit2 size={12}/></button>
+          <button onClick={onDelete} disabled={isConnecting} className="p-1.5 text-red-400/80 hover:text-red-300 bg-red-500/10 hover:bg-red-500/20 border border-red-500/20 rounded-lg transition-colors disabled:opacity-50"><Trash2 size={12}/></button>
         </div>
         <button 
            onClick={onConnect}
-           className="px-4 py-2 sm:px-5 sm:py-2 bg-slate-800 hover:bg-slate-700 text-white rounded-xl font-mono text-xs sm:text-sm tracking-wide transition-all flex items-center gap-2 active:scale-95 border border-white/10"
+           disabled={isConnecting}
+           className="px-4 py-2 sm:px-5 sm:py-2 bg-slate-800 hover:bg-slate-700 disabled:bg-slate-800/50 text-white rounded-xl font-mono text-xs sm:text-sm tracking-wide transition-all flex items-center gap-2 active:scale-95 border border-white/10"
         >
-          <Play size={14} fill="currentColor" /> Open Terminal
+          {isConnecting ? <RefreshCw size={14} className="animate-spin" /> : <Play size={14} fill="currentColor" />}
+          {isConnecting ? "Opening..." : "Open Terminal"}
         </button>
       </div>
     </div>

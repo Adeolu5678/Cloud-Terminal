@@ -1,12 +1,14 @@
 import { useEffect, useRef } from "react";
 import { Terminal } from "xterm";
 import { FitAddon } from "@xterm/addon-fit";
+import { useTerminalSettings } from "../hooks/useTerminalSettings";
 import "xterm/css/xterm.css";
 
 function TerminalView({ socket, terminalId }) {
   const containerRef = useRef(null);
   const termInstance = useRef(null);
   const fitAddonRef = useRef(null);
+  const [settings] = useTerminalSettings();
 
   useEffect(() => {
     if (!terminalId || !socket || !containerRef.current) return;
@@ -37,11 +39,11 @@ function TerminalView({ socket, terminalId }) {
 
     const terminal = new Terminal({
       convertEol: true,
-      cursorBlink: true,
-      cursorStyle: "bar",
+      cursorBlink: settings.cursorBlink,
+      cursorStyle: settings.cursorStyle,
       cursorWidth: 2,
       fontFamily: '"JetBrains Mono", "Fira Code", ui-monospace, SFMono-Regular, monospace',
-      fontSize: 14,
+      fontSize: settings.fontSize,
       lineHeight: 1.3,
       theme,
       scrollback: 5000,
@@ -78,10 +80,11 @@ function TerminalView({ socket, terminalId }) {
           socket.emit("terminal:resize", { terminalId, cols: terminal.cols, rows: terminal.rows });
         }
         // Request history only after the terminal is fitted and rendered
+        // Request history only after the terminal is fitted and rendered
         socket.emit("terminal:requestHistory", { terminalId });
         terminal.focus();
-      } catch {
-        // ignore
+      } catch (err) {
+        console.warn("TerminalView: Error during initial fit", err);
       }
     });
 
@@ -116,8 +119,8 @@ function TerminalView({ socket, terminalId }) {
           if (terminal.cols > 0 && terminal.rows > 0) {
             socket.emit("terminal:resize", { terminalId, cols: terminal.cols, rows: terminal.rows });
           }
-        } catch {
-          // ignore
+        } catch (err) {
+          console.warn("TerminalView: Error during resize", err);
         }
       }, 100);
     });
@@ -133,7 +136,30 @@ function TerminalView({ socket, terminalId }) {
       terminal.dispose();
       termInstance.current = null;
     };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [socket, terminalId]);
+
+  useEffect(() => {
+    if (termInstance.current) {
+      termInstance.current.options.fontSize = settings.fontSize;
+      termInstance.current.options.cursorStyle = settings.cursorStyle;
+      termInstance.current.options.cursorBlink = settings.cursorBlink;
+      
+      if (fitAddonRef.current) {
+        // give it a tick to apply font changes before fitting
+        setTimeout(() => {
+          try {
+            fitAddonRef.current.fit();
+            if (termInstance.current.cols > 0 && termInstance.current.rows > 0) {
+              socket.emit("terminal:resize", { terminalId, cols: termInstance.current.cols, rows: termInstance.current.rows });
+            }
+          } catch (err) {
+            console.warn("TerminalView: Error during settings update fit", err);
+          }
+        }, 10);
+      }
+    }
+  }, [settings, socket, terminalId]);
 
   const handleContainerClick = () => {
     termInstance.current?.focus();

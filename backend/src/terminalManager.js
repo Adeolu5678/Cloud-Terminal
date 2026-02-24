@@ -16,6 +16,23 @@ class TerminalManager extends EventEmitter {
   constructor() {
     super();
     this.terminals = new Map();
+    this.MAX_TERMINALS_PER_USER = 5;
+    this.IDLE_TIMEOUT_MS = 60 * 60 * 1000; // 1 hour
+    this.startIdleReaper();
+  }
+
+  startIdleReaper() {
+    setInterval(() => {
+      const now = Date.now();
+      for (const [id, terminal] of this.terminals.entries()) {
+        const lastActive = new Date(terminal.lastActive).getTime();
+        if (now - lastActive > this.IDLE_TIMEOUT_MS) {
+          console.log(`[Reaper] Killing idle terminal ${id} for user ${terminal.userId}`);
+          this.emit('exit', id, terminal.userId);
+          this.killTerminal(id);
+        }
+      }
+    }, 5 * 60 * 1000); // Check every 5 minutes
   }
 
   // Generate a unique ID for a terminal
@@ -25,16 +42,23 @@ class TerminalManager extends EventEmitter {
 
   // Create a new terminal session
   async createTerminal(options = {}) {
-    const { type, refId, cols = 120, rows = 30 } = options;
+    const { type, refId, cols = 120, rows = 30, userId, tier } = options;
     const id = this.generateId();
+    if (!userId) throw new Error("userId is required for terminal creation");
     
     return new Promise(async (resolve, reject) => {
       try {
+        const userTerminalCount = Array.from(this.terminals.values()).filter(t => t.userId === userId).length;
+        const maxTerminals = tier === 'pro' ? 50 : this.MAX_TERMINALS_PER_USER;
+        if (userTerminalCount >= maxTerminals) {
+          return reject(new Error(`Terminal limit reached (max ${maxTerminals} for ${tier || 'free'} tier). Please close an existing session or upgrade to Pro.`));
+        }
+
         let name = 'Local Terminal';
         let cwd = process.env.HOME || process.cwd();
 
         if (type === 'project' && refId) {
-          const projects = await getProjects();
+          const projects = await getProjects(userId);
           const project = projects.find(p => p.id === refId);
           if (project) {
             cwd = project.path;
@@ -44,7 +68,7 @@ class TerminalManager extends EventEmitter {
           }
 
           if (project.serverId && project.serverId !== 'local') {
-            const servers = await getServers();
+            const servers = await getServers(userId, true);
             const server = servers.find(s => s.id === project.serverId);
             if (!server) {
               return reject(new Error("Associated environment not found"));
@@ -57,6 +81,13 @@ class TerminalManager extends EventEmitter {
                   conn.end();
                   return reject(err);
                 }
+
+                // Attach persistent error handler
+                conn.removeAllListeners('error');
+                conn.on('error', (e) => {
+                  console.error('Project SSH Connection Error:', e.message);
+                  conn.end();
+                });
 
                 stream.write(`cd ${escapeShellArg(project.path)} && clear || cls\n`);
 
@@ -77,6 +108,7 @@ class TerminalManager extends EventEmitter {
 
                 const terminal = {
                   id,
+                  userId,
                   pty: normalizedPty,
                   options: { type, refId, name, cwd },
                   createdAt: new Date().toISOString(),
@@ -93,7 +125,7 @@ class TerminalManager extends EventEmitter {
                 });
 
                 normalizedPty.onExit(() => {
-                  this.emit('exit', id);
+                  this.emit('exit', id, userId);
                   this.killTerminal(id);
                 });
 
@@ -112,6 +144,10 @@ class TerminalManager extends EventEmitter {
           }
 
           // Spawn locally
+          if (process.env.ALLOW_LOCAL_ENV !== 'true') {
+            return reject(new Error("Unauthorized or local access disabled. Set ALLOW_LOCAL_ENV=true in backend to manage the host machine."));
+          }
+
           const ptyProcess = pty.spawn(defaultShell, [], {
             name: 'xterm-color',
             cols,
@@ -122,6 +158,7 @@ class TerminalManager extends EventEmitter {
 
           const terminal = {
             id,
+            userId,
             pty: ptyProcess,
             options: { type, refId, name, cwd },
             createdAt: new Date().toISOString(),
@@ -138,14 +175,14 @@ class TerminalManager extends EventEmitter {
           });
 
           ptyProcess.onExit(() => {
-            this.emit('exit', id);
+            this.emit('exit', id, userId);
             this.killTerminal(id);
           });
 
           return resolve(terminal);
 
         } else if (type === 'server' && refId) {
-          const servers = await getServers();
+          const servers = await getServers(userId, true);
           const server = servers.find(s => s.id === refId);
           if (!server) {
             return reject(new Error("Server not found"));
@@ -160,6 +197,13 @@ class TerminalManager extends EventEmitter {
                 conn.end();
                 return reject(err);
               }
+
+              // Attach persistent error handler
+              conn.removeAllListeners('error');
+              conn.on('error', (e) => {
+                console.error('Server SSH Connection Error:', e.message);
+                conn.end();
+              });
 
               // Normalize ssh2 stream to match node-pty interface
               const normalizedPty = {
@@ -179,6 +223,7 @@ class TerminalManager extends EventEmitter {
 
               const terminal = {
                 id,
+                userId,
                 pty: normalizedPty,
                 options: { type, refId, name, cwd: '' },
                 createdAt: new Date().toISOString(),
@@ -195,7 +240,7 @@ class TerminalManager extends EventEmitter {
               });
 
               normalizedPty.onExit(() => {
-                this.emit('exit', id);
+                this.emit('exit', id, userId);
                 this.killTerminal(id);
               });
 
@@ -212,6 +257,10 @@ class TerminalManager extends EventEmitter {
           });
         } else {
           // Default raw local terminal without project
+          if (process.env.ALLOW_LOCAL_ENV !== 'true') {
+            return reject(new Error("Unauthorized or local access disabled. Set ALLOW_LOCAL_ENV=true in backend to manage the host machine."));
+          }
+
           const ptyProcess = pty.spawn(defaultShell, [], {
             name: 'xterm-color',
             cols,
@@ -222,6 +271,7 @@ class TerminalManager extends EventEmitter {
 
           const terminal = {
             id,
+            userId,
             pty: ptyProcess,
             options: { type: 'local', refId: null, name, cwd },
             createdAt: new Date().toISOString(),
@@ -238,7 +288,7 @@ class TerminalManager extends EventEmitter {
           });
 
           ptyProcess.onExit(() => {
-            this.emit('exit', id);
+            this.emit('exit', id, userId);
             this.killTerminal(id);
           });
 
@@ -262,6 +312,7 @@ class TerminalManager extends EventEmitter {
   getAllTerminals() {
     return Array.from(this.terminals.values()).map(t => ({
       id: t.id,
+      userId: t.userId,
       name: t.options.name,
       type: t.options.type,
       refId: t.options.refId,
@@ -288,6 +339,7 @@ class TerminalManager extends EventEmitter {
   writeTerminal(id, data) {
     const terminal = this.terminals.get(id);
     if (terminal) {
+      if (typeof data !== 'string') return;
       terminal.lastActive = new Date().toISOString();
       terminal.pty.write(data);
     }

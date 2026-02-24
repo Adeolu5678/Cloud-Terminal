@@ -12,7 +12,7 @@ function FileIcon({ name, isDirectory, isOpen }) {
   return <File className="text-slate-500" size={16} />;
 }
 
-function FileNode({ node, serverId, level, onSelectFile, onDelete, onRename, onCreateResource }) {
+function FileNode({ node, serverId, level, onSelectFile, onDelete, onRename, onCreateResource, onRefresh }) {
   const { fsList } = useAppContext();
   const [isOpen, setIsOpen] = useState(false);
   const [children, setChildren] = useState(null);
@@ -75,8 +75,8 @@ function FileNode({ node, serverId, level, onSelectFile, onDelete, onRename, onC
         <div className="hidden group-hover:flex items-center gap-1 pr-2">
           {node.isDirectory && (
             <>
-              <button onClick={(e) => { e.stopPropagation(); onCreateResource(node.path, false); }} className="p-1 text-slate-400 hover:text-white rounded hover:bg-white/10" title="New File"><FilePlus size={12} /></button>
-              <button onClick={(e) => { e.stopPropagation(); onCreateResource(node.path, true); }} className="p-1 text-slate-400 hover:text-white rounded hover:bg-white/10" title="New Folder"><FolderPlus size={12} /></button>
+              <button onClick={(e) => { e.stopPropagation(); onCreateResource(node.path, false, handleRefresh); }} className="p-1 text-slate-400 hover:text-white rounded hover:bg-white/10" title="New File"><FilePlus size={12} /></button>
+              <button onClick={(e) => { e.stopPropagation(); onCreateResource(node.path, true, handleRefresh); }} className="p-1 text-slate-400 hover:text-white rounded hover:bg-white/10" title="New Folder"><FolderPlus size={12} /></button>
             </>
           )}
           {node.isDirectory && isOpen && (
@@ -84,10 +84,10 @@ function FileNode({ node, serverId, level, onSelectFile, onDelete, onRename, onC
               <RefreshCw size={12} />
             </button>
           )}
-          <button onClick={(e) => { e.stopPropagation(); onRename(node); }} className="p-1 text-slate-400 hover:text-white rounded hover:bg-white/10" title="Rename">
+          <button onClick={(e) => { e.stopPropagation(); onRename(node, onRefresh); }} className="p-1 text-slate-400 hover:text-white rounded hover:bg-white/10" title="Rename">
             <Edit2 size={12} />
           </button>
-          <button onClick={(e) => { e.stopPropagation(); onDelete(node); }} className="p-1 text-slate-400 hover:text-red-400 rounded hover:bg-white/10" title="Delete">
+          <button onClick={(e) => { e.stopPropagation(); onDelete(node, onRefresh); }} className="p-1 text-slate-400 hover:text-red-400 rounded hover:bg-white/10" title="Delete">
             <Trash2 size={12} />
           </button>
         </div>
@@ -116,6 +116,7 @@ function FileNode({ node, serverId, level, onSelectFile, onDelete, onRename, onC
                  onDelete={onDelete}
                  onRename={onRename}
                  onCreateResource={onCreateResource}
+                 onRefresh={handleRefresh}
                />
             ))
           )}
@@ -153,18 +154,18 @@ export function FileExplorer({ project, onSelectFile }) {
     }
   }, [project?.id, serverId, rootPath]);
 
-  const handleDelete = async (node) => {
+  const handleDelete = async (node, onSuccess) => {
     if (window.confirm(`Are you sure you want to delete ${node.name}?`)) {
       try {
         await fsDelete(serverId, node.path);
-        loadRoot(); // Refresh root, ideally we'd optimistically update or targeted refresh
+        if (onSuccess) onSuccess();
       } catch (err) {
         alert("Failed to delete: " + err.message);
       }
     }
   };
 
-  const handleRename = async (node) => {
+  const handleRename = async (node, onSuccess) => {
     const newName = window.prompt("Enter new name:", node.name);
     if (!newName || newName === node.name) return;
     
@@ -176,13 +177,13 @@ export function FileExplorer({ project, onSelectFile }) {
 
     try {
       await fsRename(serverId, node.path, newPath);
-      loadRoot();
+      if (onSuccess) onSuccess();
     } catch (err) {
       alert("Failed to rename: " + err.message);
     }
   };
 
-  const handleCreateResource = async (basePath, isDir) => {
+  const handleCreateResource = async (basePath, isDir, onSuccess) => {
     const name = window.prompt(`New ${isDir ? 'Folder' : 'File'} Name:`);
     if (!name) return;
 
@@ -196,7 +197,7 @@ export function FileExplorer({ project, onSelectFile }) {
       } else {
         await fsWrite(serverId, targetPath, "");
       }
-      loadRoot();
+      if (onSuccess) onSuccess();
     } catch (err) {
       alert("Error: " + err.message);
     }
@@ -210,8 +211,8 @@ export function FileExplorer({ project, onSelectFile }) {
       <div className="flex items-center justify-between px-4 py-2 uppercase text-xs font-bold text-slate-400 tracking-wider">
         <span>Explorer: {project.name}</span>
         <div className="flex items-center gap-2">
-          <button onClick={() => handleCreateResource(rootPath, false)} className="hover:text-white transition-colors" title="New File"><FilePlus size={14}/></button>
-          <button onClick={() => handleCreateResource(rootPath, true)} className="hover:text-white transition-colors" title="New Folder"><FolderPlus size={14}/></button>
+          <button onClick={() => handleCreateResource(rootPath, false, loadRoot)} className="hover:text-white transition-colors" title="New File"><FilePlus size={14}/></button>
+          <button onClick={() => handleCreateResource(rootPath, true, loadRoot)} className="hover:text-white transition-colors" title="New Folder"><FolderPlus size={14}/></button>
           <button onClick={loadRoot} className="hover:text-white transition-colors" title="Refresh"><RefreshCw size={14}/></button>
         </div>
       </div>
@@ -231,6 +232,7 @@ export function FileExplorer({ project, onSelectFile }) {
             onDelete={handleDelete}
             onRename={handleRename}
             onCreateResource={handleCreateResource}
+            onRefresh={loadRoot}
           />
         ))}
       </div>
